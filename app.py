@@ -325,9 +325,9 @@ with tab4:
                 JOIN customers c ON d.customer_id = c.id ORDER BY pm.id DESC
             ''').fetchall()
         
-               if history:
+        if history:
             for record in history:
-                # Convert SQLite Row objects explicitly to dict keys to prevent rendering bugs
+                # Unpack and cast properties strictly to clean Python datatypes before laying out components
                 rec_id = record['id']
                 rec_client = record['client']
                 rec_pe = record['photo_eyes']
@@ -369,7 +369,7 @@ FIELD SERVICE TECHNICIAN SUMMARY NOTES:
 Thank you for executing routine compliance maintenance agreements!
 ==================================================
 """
-                        # Export button layout with distinct string identity hashes
+                        # Export button layout using strict tracking keys to ensure render presence
                         st.download_button(
                             label="📥 Export Receipt",
                             data=receipt_text,
