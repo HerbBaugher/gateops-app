@@ -139,15 +139,46 @@ if not saas_accepted:
 if days_remaining < 0:
     st.title("🔒 Access Suspended - Trial Expired")
     st.error(f"Your 14-day free trial expired on {trial_end}. To reactivate your account and secure your existing database, please subscribe below.")
-    st.link_button("🚀 Upgrade to Pro Account ($99/mo)", "https://buy.stripe.com/your_stripe_link")
+    
+    # Expiration Screen Dynamic Tier Selector
+    selected_exp_tier = st.selectbox(
+        "Select your upgrade tier to unlock your database:",
+        ["Solo Tech ($49/mo)", "Growth Suite ($129/mo)", "Enterprise Pro ($399/mo)"]
+    )
+    if "Solo Tech" in selected_exp_tier:
+        exp_link = "https://buy.stripe.com/your_solo_tech_link"
+    elif "Growth Suite" in selected_exp_tier:
+        exp_link = "https://buy.stripe.com/your_growth_suite_link"
+    else:
+        exp_link = "https://buy.stripe.com/your_enterprise_link"
+        
+    st.link_button(f"🚀 Activate {selected_exp_tier} and Unlock Account", exp_link)
     st.stop()
 
-# --- SIDEBAR CONTROL PANEL ---
+# --- SIDEBAR CONTROL PANEL (Tier Dynamic Layout Engine) ---
 st.sidebar.title("💳 Subscription Management")
 st.sidebar.info(f"🗓️ **Account Status:** 14-Day Free Trial\n\n**Days Left:** {max(0, days_remaining)} Days Remaining")
 st.sidebar.markdown("---")
-st.sidebar.write("Upgrade anytime to prevent database lockouts or data erasure at the end of your 14-day window.")
-st.sidebar.link_button("🚀 Go Pro ($99/mo)", "https://buy.stripe.com/your_stripe_link")
+
+selected_tier = st.sidebar.selectbox(
+    "Choose Your Business Tier:",
+    ["Solo Tech ($49/mo)", "Growth Suite ($129/mo)", "Enterprise Pro ($399/mo)"]
+)
+
+if "Solo Tech" in selected_tier:
+    stripe_link = "https://buy.stripe.com/your_solo_tech_link"
+    features = "* 👥 **1 User Account**\n* 🏡 Up to 50 active property allocations\n* 📋 Core UL 325 safety checklists"
+elif "Growth Suite" in selected_tier:
+    stripe_link = "https://buy.stripe.com/your_growth_suite_link"
+    features = "* 👥 **Up to 5 concurrent users**\n* 🏢 Unlimited property profile records\n* 📅 Full automated PM alert systems"
+else:
+    stripe_link = "https://buy.stripe.com/your_enterprise_link"
+    features = "* 👥 **Unlimited staff accounts**\n* 🏭 Custom layout checklist items\n* 🔗 Enterprise API system database sync"
+
+st.sidebar.markdown(f"**Included Features:**\n{features}")
+st.sidebar.markdown("---")
+st.sidebar.write("Upgrade anytime to prevent database lockouts at the end of your 14-day window.")
+st.sidebar.link_button(f"🚀 Activate {selected_tier.split(' (')[0]}", stripe_link)
 
 # --- CENTRAL APP HEADER ---
 st.title("🚧 GateOps Pro Dashboard")
@@ -327,7 +358,7 @@ with tab4:
         
         if history:
             for record in history:
-                # Unpack and cast properties strictly to clean Python datatypes before laying out components
+                # Type mapping conversion to safe standard data objects before expansion rendering
                 rec_id = record['id']
                 rec_client = record['client']
                 rec_pe = record['photo_eyes']
@@ -369,13 +400,13 @@ FIELD SERVICE TECHNICIAN SUMMARY NOTES:
 Thank you for executing routine compliance maintenance agreements!
 ==================================================
 """
-                        # Export button layout using strict tracking keys to ensure render presence
+                        # Binary fallback stream forces mobile browsers to use safe share sheets without screen navigation
                         st.download_button(
                             label="📥 Export Receipt",
                             data=receipt_text,
                             file_name=f"Service_Receipt_Log_{rec_id}_{rec_client.replace(' ', '_')}.txt",
                             mime="application/octet-stream",
-                            key=f"dl_btn_secure_{rec_id}"
+                            key=f"dl_btn_secure_v2_{rec_id}"
                         )
         else:
             st.info("No compiled testing history records found in the local file database.")
