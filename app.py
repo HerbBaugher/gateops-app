@@ -170,6 +170,9 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ==========================================
 # TAB 1: CUSTOMER MANAGEMENT
 # ==========================================
+fo("No customers currently logged in system database.")# ==========================================
+# TAB 1: CUSTOMER MANAGEMENT
+# ==========================================
 with tab1:
     st.header("Register New Customer Property")
     with st.form("add_customer_form", clear_on_submit=True):
@@ -193,8 +196,10 @@ with tab1:
     if global_customers:
         with get_db_connection() as conn:
             st.dataframe(conn.execute("SELECT * FROM customers ORDER BY id DESC").fetchall(), use_container_width=True)
-else:
-    st.info("No customers currently logged in system database.")
+    else:  # <--- Now it is perfectly inside the "with tab1:" block!
+        st.info("No customers currently logged in system database.")
+
+
 
 # ==========================================
 # TAB 2: MAINTENANCE CONTRACTS
