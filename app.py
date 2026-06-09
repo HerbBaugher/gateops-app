@@ -325,48 +325,57 @@ with tab4:
                 JOIN customers c ON d.customer_id = c.id ORDER BY pm.id DESC
             ''').fetchall()
         
-        if history:
+               if history:
             for record in history:
-                with st.expander(f"📄 Inspection Summary - Client: {record['client']} (ID: #{record['id']})"):
+                # Convert SQLite Row objects explicitly to dict keys to prevent rendering bugs
+                rec_id = record['id']
+                rec_client = record['client']
+                rec_pe = record['photo_eyes']
+                rec_loops = record['loop_detectors']
+                rec_edges = record['safety_edges']
+                rec_mech = record['mechanical']
+                rec_comments = record['comments']
+
+                with st.expander(f"📄 Inspection Summary - Client: {rec_client} (ID: #{rec_id})"):
                     col_view, col_action = st.columns([4, 1])
                     
                     with col_view:
-                        st.write(f"**Photo-Electric Eyes Check:** {'✅ PASS' if record['photo_eyes'] else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Vehicle Loop Detectors Check:** {'✅ PASS' if record['loop_detectors'] else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Safety Edge Arrays Check:** {'✅ PASS' if record['safety_edges'] else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Mechanical Hardware Review:** {'✅ PASS' if record['mechanical'] else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Technician Notes:** *{record['comments']}*")
+                        st.write(f"**Photo-Electric Eyes Check:** {'✅ PASS' if rec_pe else '❌ FAIL / NOT TESTED'}")
+                        st.write(f"**Vehicle Loop Detectors Check:** {'✅ PASS' if rec_loops else '❌ FAIL / NOT TESTED'}")
+                        st.write(f"**Safety Edge Arrays Check:** {'✅ PASS' if rec_edges else '❌ FAIL / NOT TESTED'}")
+                        st.write(f"**Mechanical Hardware Review:** {'✅ PASS' if rec_mech else '❌ FAIL / NOT TESTED'}")
+                        st.write(f"**Technician Notes:** *{rec_comments}*")
                     
                     with col_action:
                         # Construct a beautifully aligned text receipt layout
                         receipt_text = f"""==================================================
               GATEOPS PRO - SERVICE RECEIPT       
 ==================================================
-Property / Client: {record['client']}
-Safety Inspection Log ID: #{record['id']}
+Property / Client: {rec_client}
+Safety Inspection Log ID: #{rec_id}
 Date Generated: {datetime.now().strftime('%Y-%m-%d')}
 --------------------------------------------------
 UL 325 COMPLIANCE SAFETY TESTING AUDIT:
 
-[{"X" if record['photo_eyes'] else " "}] Photo-Electric Eyes Alignment & Reverse Test
-[{"X" if record['loop_detectors'] else " "}] Vehicle Inductive Ground Loop System Test
-[{"X" if record['safety_edges'] else " "}] Contact Safety Edge Reversal Sensor Test
-[{"X" if record['mechanical'] else " "}] Mechanical Drive Chain & Hardware Structural Test
+[{"X" if rec_pe else " "}] Photo-Electric Eyes Alignment & Reverse Test
+[{"X" if rec_loops else " "}] Vehicle Inductive Ground Loop System Test
+[{"X" if rec_edges else " "}] Contact Safety Edge Reversal Sensor Test
+[{"X" if rec_mech else " "}] Mechanical Drive Chain & Hardware Structural Test
 
 --------------------------------------------------
 FIELD SERVICE TECHNICIAN SUMMARY NOTES:
-{record['comments']}
+{rec_comments}
 --------------------------------------------------
 Thank you for executing routine compliance maintenance agreements!
 ==================================================
 """
-                        # Export button layout
+                        # Export button layout with distinct string identity hashes
                         st.download_button(
                             label="📥 Export Receipt",
                             data=receipt_text,
-                            file_name=f"Service_Receipt_Log_{record['id']}_{record['client'].replace(' ', '_')}.txt",
+                            file_name=f"Service_Receipt_Log_{rec_id}_{rec_client.replace(' ', '_')}.txt",
                             mime="text/plain",
-                            key=f"dl_btn_{record['id']}"
+                            key=f"dl_btn_secure_{rec_id}"
                         )
         else:
             st.info("No compiled testing history records found in the local file database.")
