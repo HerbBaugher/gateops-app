@@ -374,7 +374,7 @@ Thank you for executing routine compliance maintenance agreements!
                             label="📥 Export Receipt",
                             data=receipt_text,
                             file_name=f"Service_Receipt_Log_{rec_id}_{rec_client.replace(' ', '_')}.txt",
-                            mime="text/plain",
+                            mime="application/octet-stream",
                             key=f"dl_btn_secure_{rec_id}"
                         )
         else:
