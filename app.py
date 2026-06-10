@@ -21,6 +21,27 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def patch_and_migrate_database():
+    """Forces old cloud database instances to dynamically adopt new schema updates."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Inspect columns currently existing on Streamlit's server
+        try:
+            cursor.execute("PRAGMA table_info(dispatches)")
+            existing_columns = [row[1] for row in cursor.fetchall()]
+            
+            # If columns exist from the older build, alter the tables in place
+            if existing_columns and "loops_pass" not in existing_columns:
+                conn.execute("ALTER TABLE dispatches ADD COLUMN serial_number TEXT;")
+                conn.execute("ALTER TABLE dispatches ADD COLUMN photo_eyes_pass INTEGER DEFAULT 0;")
+                conn.execute("ALTER TABLE dispatches ADD COLUMN loops_pass INTEGER DEFAULT 0;")
+                conn.execute("ALTER TABLE dispatches ADD COLUMN edges_pass INTEGER DEFAULT 0;")
+                conn.execute("ALTER TABLE dispatches ADD COLUMN hardware_pass INTEGER DEFAULT 0;")
+                conn.execute("ALTER TABLE dispatches ADD COLUMN technician_notes TEXT;")
+                conn.commit()
+        except sqlite3.OperationalError:
+            pass # Table might not be constructed yet, caught by init execution below
+
 def init_database_schema():
     """Compiles all required tables matching the operational blueprint."""
     with get_db_connection() as conn:
@@ -57,7 +78,7 @@ def init_database_schema():
                 status TEXT DEFAULT 'Scheduled', client_signature TEXT,
                 photo_eyes_pass INTEGER DEFAULT 0, loops_pass INTEGER DEFAULT 0,
                 edges_pass INTEGER DEFAULT 0, hardware_pass INTEGER DEFAULT 0,
-                tech_notes TEXT, serial_number TEXT,
+                technician_notes TEXT, serial_number TEXT,
                 FOREIGN KEY (proposal_id) REFERENCES proposals (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
@@ -69,7 +90,8 @@ def init_database_schema():
             conn.execute("INSERT INTO system_settings (card_fee_percentage) VALUES (3.0)")
         conn.commit()
 
-# Execute structural database build
+# Execute automatic cloud safe alignments
+patch_and_migrate_database()
 init_database_schema()
 
 # ==========================================
@@ -147,13 +169,11 @@ with tab1:
     with col2:
         st.subheader("Active Customer Registry")
         with get_db_connection() as conn:
-            # Query active customers only (Soft Delete filtering layer)
             active_df = pd.read_sql_query("SELECT id, name, phone, email, address, notes FROM customers WHERE is_active = 1", conn)
         
         if not active_df.empty:
             st.dataframe(active_df, use_container_width=True, hide_index=True)
             
-            # Soft Delete Interactive Section
             st.markdown("---")
             st.subheader("🚫 Deactivate & Archive Property File")
             archive_map = dict(zip(active_df["name"], active_df["id"]))
@@ -203,7 +223,6 @@ with tab2:
                 base_cost = st.number_input("Base Component Layout & Labor Quoted Price ($)", min_value=0.0, value=2500.0)
                 
             if st.form_submit_button("Generate Complete Client Estimate Proposal"):
-                # Handle processing fee calculation loops matching settings metrics
                 percentage_multiplier = 1 + (new_fee / 100)
                 gross_calculated_total = base_cost * percentage_multiplier
                 acc_string = ", ".join(accessories)
@@ -229,7 +248,6 @@ with tab2:
         if not prop_df.empty:
             st.dataframe(prop_df, use_container_width=True, hide_index=True)
             
-            # Decision Handling Block
             st.markdown("### 🖋️ Present & Update Proposal State Decision")
             col_d1, col_d2 = st.columns(2)
             with col_d1:
@@ -246,9 +264,7 @@ with tab2:
                         st.error("Signee name authentication and signature check validations required.")
                     else:
                         with get_db_connection() as conn:
-                            # Update statement status
                             conn.execute("UPDATE proposals SET status = 'Accepted' WHERE id = ?", (selected_prop_id,))
-                            # Grab related user fields to auto-create work dispatch ticket downstream
                             prop_details = conn.execute("SELECT customer_id FROM proposals WHERE id = ?", (selected_prop_id,)).fetchone()
                             conn.execute(
                                 "INSERT INTO dispatches (proposal_id, customer_id, client_signature, status) VALUES (?, ?, ?, 'Scheduled')",
@@ -367,8 +383,8 @@ with tab4:
                     with get_db_connection() as conn:
                         conn.execute("""
                             UPDATE dispatches 
-                            SET status = 'Completed', photo_eyes_pass = ?, loop_detectors_pass = ?, 
-                                edge_sensors_pass = ?, gate_hardware_pass = ?, technician_notes = ?, 
+                            SET status = 'Completed', photo_eyes_pass = ?, loops_pass = ?, 
+                                edges_pass = ?, hardware_pass = ?, technician_notes = ?, 
                                 serial_number = ? 
                             WHERE id = ?
                         """, (
@@ -388,8 +404,10 @@ with tab4:
     with get_db_connection() as conn:
         history_df = pd.read_sql_query("""
             SELECT d.id as ticket_id, c.name as location, d.serial_number, d.schedule_date, 
-                   d.photo_eyes_pass as photo_eyes, d.loop_detectors_pass as ground_loops, 
-                   d.edge_sensors_pass as safety_edges, d.gate_hardware_pass as mechanics, 
+                   d.photo_eyes_pass as photo_eyes, 
+                   d.loops_pass as ground_loops, 
+                   d.edges_pass as safety_edges, 
+                   d.hardware_pass as mechanics, 
                    d.technician_notes, p.total_with_fees as invoice_amt 
             FROM dispatches d 
             JOIN customers c ON d.customer_id = c.id 
@@ -400,7 +418,6 @@ with tab4:
     if not history_df.empty:
         st.dataframe(history_df, use_container_width=True, hide_index=True)
         
-        # Interactive Receipt Generator Module Tool
         st.markdown("### 📥 Instantly Export Compliant Field Inspection Receipts")
         target_receipt_id = st.selectbox("Select Completed Ticket Reference File target ID", options=history_df["ticket_id"].tolist())
         target_row = history_df[history_df["ticket_id"] == target_receipt_id].iloc[0]
@@ -449,7 +466,6 @@ with tab5:
     if not metrics or metrics["total_jobs"] == 0:
         st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
     else:
-        # Business Financial Performance Metric Cards Display
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
         
         gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
@@ -478,6 +494,4 @@ with tab5:
         
         if not chart_data_df.empty:
             st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
-
-
 
