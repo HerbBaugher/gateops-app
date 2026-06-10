@@ -479,3 +479,5 @@ with tab5:
         if not chart_data_df.empty:
             st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
 
+
+
