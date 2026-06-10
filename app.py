@@ -1,413 +1,481 @@
 import streamlit as st
 import sqlite3
+import pandas as pd
 from datetime import datetime, timedelta
 
 # ==========================================
-# 1. PAGE CONFIGURATION (Strictly First!)
+# 1. PAGE ENGINE & SYSTEM INTENT INITIALIZATION
 # ==========================================
 st.set_page_config(
-    page_title="GateOps Pro - Field Service Dashboard",
-    page_icon="🛠️", 
+    page_title="GateOps Pro - Enterprise Workspace",
+    page_icon="🚧",
     layout="wide"
 )
 
 # ==========================================
-# 2. LOCAL DATABASE ENGINE (SQLite)
+# 2. THREAD-SAFE DATABASE CONFIGURATION
 # ==========================================
 def get_db_connection():
-    """Establishes connection to a local SQLite file database."""
-    conn = sqlite3.connect("gateops_local_production.db")
-    conn.row_factory = sqlite3.Row  # Allows accessing columns by name
+    """Generates an isolated, thread-safe local file connection factory."""
+    conn = sqlite3.connect("gateops_enterprise_production.db")
+    conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
-    """Initializes local schema tables using standard SQLite structures."""
+def init_database_schema():
+    """Compiles all required tables matching the operational blueprint."""
     with get_db_connection() as conn:
-        # 1. Customers Table
+        # App System Configuration Profile
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS system_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_fee_percentage REAL DEFAULT 3.0,
+                company_name TEXT DEFAULT 'GateOps Pro Installers'
+            )
+        ''')
+        # Customers Table (with Soft Delete integration)
         conn.execute('''
             CREATE TABLE IF NOT EXISTS customers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT
+                name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT,
+                notes TEXT, is_active INTEGER DEFAULT 1
             )
         ''')
-        # 2. Maintenance Contracts Table
+        # Proposals Table
         conn.execute('''
-            CREATE TABLE IF NOT EXISTS contracts (
+            CREATE TABLE IF NOT EXISTS proposals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER,
-                contract_type TEXT, start_date TEXT, end_date TEXT, price REAL,
+                operator_type TEXT, accessories_list TEXT, scope_of_work TEXT,
+                base_pricing REAL, total_with_fees REAL, status TEXT DEFAULT 'Pending',
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
         ''')
-        # 3. Service Dispatches Table
+        # Work Orders / Active Dispatches Table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS dispatches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER,
-                technician TEXT, scheduled_date TEXT, issue_description TEXT, status TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_id INTEGER,
+                customer_id INTEGER, technician_crew TEXT, schedule_date TEXT,
+                status TEXT DEFAULT 'Scheduled', client_signature TEXT,
+                photo_eyes_pass INTEGER DEFAULT 0, loops_pass INTEGER DEFAULT 0,
+                edges_pass INTEGER DEFAULT 0, hardware_pass INTEGER DEFAULT 0,
+                tech_notes TEXT, serial_number TEXT,
+                FOREIGN KEY (proposal_id) REFERENCES proposals (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
         ''')
-        # 4. UL 325 PM Checklists Table
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS pm_checklists (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, dispatch_id INTEGER,
-                photo_eyes_pass INTEGER, loop_detectors_pass INTEGER, edge_sensors_pass INTEGER,
-                gate_hardware_pass INTEGER, technician_notes TEXT,
-                FOREIGN KEY (dispatch_id) REFERENCES dispatches (id)
-            )
-        ''')
-        # 5. App Settings / SaaS Agreement Configuration Table
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS app_settings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                saas_accepted INTEGER DEFAULT 0,
-                trial_start_date TEXT
-            )
-        ''')
         
-        # Check if initial system configuration seeding is required
-        settings_check = conn.execute("SELECT COUNT(*) as count FROM app_settings").fetchone()
-        if settings_check["count"] == 0:
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            conn.execute("INSERT INTO app_settings (saas_accepted, trial_start_date) VALUES (0, ?)", (today_str,))
-        
+        # Populate default settings row if completely fresh build
+        check = conn.execute("SELECT COUNT(*) as count FROM system_settings").fetchone()
+        if check["count"] == 0:
+            conn.execute("INSERT INTO system_settings (card_fee_percentage) VALUES (3.0)")
         conn.commit()
 
-# Execute database initialization
-init_db()
+# Execute structural database build
+init_database_schema()
 
-# Query local settings configuration to check app state
+# ==========================================
+# 3. GLOBAL WORKSPACE SETTINGS CACHING
+# ==========================================
 with get_db_connection() as conn:
-    settings = conn.execute("SELECT * FROM app_settings WHERE id = 1").fetchone()
-
-saas_accepted = settings["saas_accepted"]
-trial_start = datetime.strptime(settings["trial_start_date"], "%Y-%m-%d").date()
-trial_end = trial_start + timedelta(days=14)
-days_remaining = (trial_end - datetime.now().date()).days
+    settings_row = conn.execute("SELECT * FROM system_settings WHERE id = 1").fetchone()
+    current_fee_rate = settings_row["card_fee_percentage"]
 
 # ==========================================
-# WORKFLOW SCREEN A: SAAS AGREEMENT GATEWAY
+# 4. DASHBOARD SIDEBAR CORE ENGINE
 # ==========================================
-if not saas_accepted:
-    st.title("🚧 Welcome to GateOps Pro")
-    st.subheader("Software Setup & End User License Agreement")
-    st.info("Before establishing your installation account and launching your 14-day free trial, please review and accept our SaaS Subscription Terms.")
-    
-    with st.expander("📄 CLICK HERE TO READ THE FULL SAAS SERVICE & LICENSE AGREEMENT", expanded=True):
-        st.markdown("""
-        ### GATEOPS PRO – SOFTWARE AS A SERVICE (SaaS) AGREEMENT
-        
-        **1. License & Scope of Service**
-        Provider grants Subscriber a non-exclusive, non-transferable, revocable right to access and use the GateOps Pro application solely for Subscriber’s internal business operations (managing customers, contracts, dispatches, and safety checklists).
-        
-        **2. Free Trial & Subscription Terms**
-        * **2.1 14-Day Free Trial:** The software is initially configured on a trial basis free of charge for 14 calendar days.
-        * **2.2 Data Erasure:** ANY DATA ENTERED INTO THE SOFTWARE DURING THE 14-DAY FREE TRIAL WILL BE PERMANENTLY LOST UNLESS SUBSCRIBER PURCHASES A DOWNSTREAM PAID SUBSCRIPTION PRIOR TO THE EXPIRATION OF THE TRIAL PERIOD.
-        
-        **3. Subscriber Responsibilities & Data**
-        * **3.1 Field Connectivity:** Subscriber acknowledges that the Software requires an active cellular data or internet connection for field deployment. Provider is not responsible for a technician's inability to submit UL 325 PM checklists due to lack of local signal.
-        
-        **4. Intellectual Property & Code Protection**
-        * Subscriber shall not reverse engineer, decompile, or attempt to extract the source code of the Software or build a competitive product using similar features.
-        
-        **5. Disclaimer of Warranties & UL 325 Compliance Liability**
-        * **5.1 Technical Compliance Disclaimer:** While the Software provides interactive "UL 325 Compliance Checklists" for field convenience, the accurate physical execution of these safety tests remains the sole responsibility of Subscriber and its technicians.
-        
-        **6. Limitation of Liability**
-        IN NO EVENT SHALL THE PROVIDER BE LIABLE FOR ANY CONSEQUENTIAL, INDIRECT, INCIDENTAL, OR PUNITIVE DAMAGES (INCLUDING LOSS OF BUSINESS PROFITS, DATA LOGS, OR UNLOGGED PROPERTY DAMAGE CLAIMS) ARISING OUT OF THE USE OF THE SOFTWARE.
-        """)
-    
-    with st.form("saas_acceptance_form"):
-        agree_check = st.checkbox("I accept all the terms, conditions, and liability disclaimers of the GateOps Pro SaaS Agreement, including the 14-day trial limitations.")
-        submit_acceptance = st.form_submit_button("Confirm & Activate Dashboard")
-        
-        if submit_acceptance:
-            if agree_check:
-                with get_db_connection() as conn:
-                    conn.execute("UPDATE app_settings SET saas_accepted = 1 WHERE id = 1")
-                    conn.commit()
-                st.success("Agreement accepted successfully! Reloading system...")
-                st.rerun()
-            else:
-                st.error("You must click the check-box accepting the terms before accessing the software dashboard.")
-    st.stop()
-
-# ==========================================
-# WORKFLOW SCREEN B: CORE DASHBOARD SUITE
-# ==========================================
-
-# Check Trial Expiration Window
-if days_remaining < 0:
-    st.title("🔒 Access Suspended - Trial Expired")
-    st.error(f"Your 14-day free trial expired on {trial_end}. To reactivate your account and secure your existing database, please subscribe below.")
-    
-    # Expiration Screen Dynamic Tier Selector
-    selected_exp_tier = st.selectbox(
-        "Select your upgrade tier to unlock your database:",
-        ["Solo Tech ($49/mo)", "Growth Suite ($129/mo)", "Enterprise Pro ($399/mo)"]
-    )
-    if "Solo Tech" in selected_exp_tier:
-        exp_link = "https://buy.stripe.com/your_solo_tech_link"
-    elif "Growth Suite" in selected_exp_tier:
-        exp_link = "https://buy.stripe.com/your_growth_suite_link"
-    else:
-        exp_link = "https://buy.stripe.com/your_enterprise_link"
-        
-    st.link_button(f"🚀 Activate {selected_exp_tier} and Unlock Account", exp_link)
-    st.stop()
-
-# --- SIDEBAR CONTROL PANEL (Tier Dynamic Layout Engine) ---
-st.sidebar.title("💳 Subscription Management")
-st.sidebar.info(f"🗓️ **Account Status:** 14-Day Free Trial\n\n**Days Left:** {max(0, days_remaining)} Days Remaining")
+st.sidebar.title("⚙️ Workspace Controls")
 st.sidebar.markdown("---")
-
-selected_tier = st.sidebar.selectbox(
-    "Choose Your Business Tier:",
-    ["Solo Tech ($49/mo)", "Growth Suite ($129/mo)", "Enterprise Pro ($399/mo)"]
+st.sidebar.subheader("Credit Card Fee Surcharge")
+new_fee = st.sidebar.number_input(
+    "Set Customer Card Processing Fee (%)", 
+    min_value=0.0, max_value=6.0, value=current_fee_rate, step=0.1
 )
 
-if "Solo Tech" in selected_tier:
-    stripe_link = "https://buy.stripe.com/your_solo_tech_link"
-    features = "* 👥 **1 User Account**\n* 🏡 Up to 50 active property allocations\n* 📋 Core UL 325 safety checklists"
-elif "Growth Suite" in selected_tier:
-    stripe_link = "https://buy.stripe.com/your_growth_suite_link"
-    features = "* 👥 **Up to 5 concurrent users**\n* 🏢 Unlimited property profile records\n* 📅 Full automated PM alert systems"
-else:
-    stripe_link = "https://buy.stripe.com/your_enterprise_link"
-    features = "* 👥 **Unlimited staff accounts**\n* 🏭 Custom layout checklist items\n* 🔗 Enterprise API system database sync"
+if new_fee != current_fee_rate:
+    with get_db_connection() as conn:
+        conn.execute("UPDATE system_settings SET card_fee_percentage = ? WHERE id = 1", (new_fee,))
+        conn.commit()
+    st.sidebar.success(f"Fee updated to {new_fee}% globally!")
+    st.rerun()
 
-st.sidebar.markdown(f"**Included Features:**\n{features}")
 st.sidebar.markdown("---")
-st.sidebar.write("Upgrade anytime to prevent database lockouts at the end of your 14-day window.")
-st.sidebar.link_button(f"🚀 Activate {selected_tier.split(' (')[0]}", stripe_link)
+st.sidebar.info("💡 Pro Tip: Passing processing surcharges directly to commercial clients can save your business thousands of dollars in annual merchant account swipe fees.")
 
-# --- CENTRAL APP HEADER ---
-st.title("🚧 GateOps Pro Dashboard")
-st.subheader("Field Service, Contract Automation & UL 325 Compliance")
-st.markdown("---")
+# ==========================================
+# 5. CORE INTERFACE LAYOUT MODULES
+# ==========================================
+st.title("🚧 GateOps Pro Enterprise Suite")
+st.write("Complete Automated Operational Pipeline Framework")
 
-# Global Customer Lookup cache initialization
-with get_db_connection() as conn:
-    global_customers = conn.execute("SELECT id, name FROM customers ORDER BY name ASC").fetchall()
-customer_map = {cust["name"]: cust["id"] for cust in global_customers} if global_customers else {}
-
-# Define Tabs Architecture
-tab1, tab2, tab3, tab4 = st.tabs([
-    "👥 Customer Management", 
-    "📜 Maintenance Contracts", 
-    "📅 Service Dispatch Board", 
-    "📋 UL 325 PM Compliance Checks"
+# Generate the Blueprint Navigation Tabs
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "👥 Client Intake & Directory", 
+    "📄 Proposal Builder Engine", 
+    "📅 Dispatch & Scheduling", 
+    "📋 Compliance Checks & Work Orders", 
+    "📊 Executive Performance Analytics"
 ])
 
-# ==========================================
-# TAB 1: CUSTOMER MANAGEMENT
-# ==========================================
+# ------------------------------------------
+# TAB 1: CLIENT INTAKE (WITH SOFT DELETE)
+# ------------------------------------------
 with tab1:
-    st.header("Register New Customer Property")
-    with st.form("add_customer_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            cust_name = st.text_input("Customer/Company Name (e.g., FedEx Hub 4)")
-            cust_phone = st.text_input("Site Contact Phone")
-        with col2:
-            cust_email = st.text_input("Billing Email Address")
-            cust_address = st.text_input("Physical Gate Operator Location (Address)")
+    st.header("Profile Intake Screen")
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("New Client Entry Form")
+        with st.form("add_customer_form", clear_on_submit=True):
+            c_name = st.text_input("Customer/Property Name")
+            c_phone = st.text_input("Primary Telephone Number")
+            c_email = st.text_input("Billing Email Coordinates")
+            c_address = st.text_input("Physical Gate Asset Location Address")
+            c_notes = st.text_area("On-Site Ground Notes / Entry Restrictions")
+            
+            if st.form_submit_button("Save Property Target"):
+                if c_name:
+                    with get_db_connection() as conn:
+                        conn.execute(
+                            "INSERT INTO customers (name, phone, email, address, notes) VALUES (?, ?, ?, ?, ?)",
+                            (c_name, c_phone, c_email, c_address, c_notes)
+                        )
+                        conn.commit()
+                    st.success(f"Successfully added profile registry for {c_name}!")
+                    st.rerun()
+                else:
+                    st.error("Name entry field is mandatory.")
+
+    with col2:
+        st.subheader("Active Customer Registry")
+        with get_db_connection() as conn:
+            # Query active customers only (Soft Delete filtering layer)
+            active_df = pd.read_sql_query("SELECT id, name, phone, email, address, notes FROM customers WHERE is_active = 1", conn)
         
-        if st.form_submit_button("Save Customer Profile") and cust_name:
-            with get_db_connection() as conn:
-                conn.execute("INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)",
-                             (cust_name, cust_phone, cust_email, cust_address))
-                conn.commit()
-            st.success(f"Successfully recorded customer profile for '{cust_name}'.")
-            st.rerun()
-
-    st.markdown("### 📋 Active Customer Registry")
-    if global_customers:
-        with get_db_connection() as conn:
-            st.dataframe(conn.execute("SELECT * FROM customers ORDER BY id DESC").fetchall(), use_container_width=True)
-    else:
-        st.info("No customers currently logged in system database.")
-
-# ==========================================
-# TAB 2: MAINTENANCE CONTRACTS
-# ==========================================
-with tab2:
-    st.header("Issue Recurring Service Contract")
-    if not global_customers:
-        st.warning("You must enter a customer in Tab 1 before creating a service agreement.")
-    else:
-        with st.form("contract_form", clear_on_submit=True):
-            selected_cust = st.selectbox("Link to Customer Profile", options=list(customer_map.keys()))
-            contract_type = st.selectbox("Service Interval Type", ["Commercial Quarterly PM", "Commercial Semi-Annual", "Residential Annual"])
-            duration_months = st.number_input("Agreement Term Length (Months)", min_value=1, max_value=36, value=12)
-            price = st.number_input("Total Agreement Valuation ($)", min_value=0.0, value=1200.0)
+        if not active_df.empty:
+            st.dataframe(active_df, use_container_width=True, hide_index=True)
             
-            if st.form_submit_button("Activate Service Contract"):
-                start_date = datetime.now().date()
-                end_date = start_date + timedelta(days=duration_months * 30)
-                with get_db_connection() as conn:
-                    conn.execute('''
-                        INSERT INTO contracts (customer_id, contract_type, start_date, end_date, price) 
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (customer_map[selected_cust], contract_type, str(start_date), str(end_date), price))
-                    conn.commit()
-                st.success(f"Service Contract authorized for {selected_cust}. Valid through {end_date}.")
-
-        st.markdown("### 📜 Executed Maintenance Agreements")
-        with get_db_connection() as conn:
-            active_contracts = conn.execute('''
-                SELECT con.id, cust.name as customer_name, con.contract_type, con.start_date, con.end_date, con.price 
-                FROM contracts con JOIN customers cust ON con.customer_id = cust.id ORDER BY con.id DESC
-            ''').fetchall()
-            if active_contracts: 
-                st.dataframe(active_contracts, use_container_width=True)
-
-# ==========================================
-# TAB 3: SERVICE DISPATCH BOARD
-# ==========================================
-with tab3:
-    st.header("Create Service Ticket / Dispatch Directive")
-    if not global_customers:
-        st.warning("You must have active records in the customer registry to run dispatch operations.")
-    else:
-        with st.form("dispatch_form", clear_on_submit=True):
-            selected_cust_dispatch = st.selectbox("Target Site Property", options=list(customer_map.keys()))
-            tech = st.text_input("Assigned Service Technician")
-            sched_date = st.date_input("Target Service Window Date", datetime.now().date())
-            issue = st.text_area("Scope of Maintenance Call / Reported Malfunction Description")
-            status = st.selectbox("Dispatch Routing Status", ["Pending", "In Progress", "Completed"])
+            # Soft Delete Interactive Section
+            st.markdown("---")
+            st.subheader("🚫 Deactivate & Archive Property File")
+            archive_map = dict(zip(active_df["name"], active_df["id"]))
+            target_archive = st.selectbox("Select property profile to safely archive:", options=list(archive_map.keys()))
             
-            if st.form_submit_button("Log & Route Dispatch Ticket"):
+            if st.button("Archive Profile Row", type="primary"):
                 with get_db_connection() as conn:
-                    conn.execute('''
-                        INSERT INTO dispatches (customer_id, technician, scheduled_date, issue_description, status) 
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (customer_map[selected_cust_dispatch], tech, str(sched_date), issue, status))
+                    conn.execute("UPDATE customers SET is_active = 0 WHERE id = ?", (archive_map[target_archive],))
                     conn.commit()
-                st.success("Dispatch instruction successfully pushed onto the service board schedule.")
+                st.success(f"Archived {target_archive} safely out of dispatch registries.")
                 st.rerun()
+        else:
+            st.info("No active property records located inside system memory workspace.")
 
-        st.markdown("### 📅 Active Service Schedule Board")
-        with get_db_connection() as conn:
-            active_dispatches = conn.execute('''
-                SELECT d.id, c.name as customer_name, d.technician, d.scheduled_date, d.issue_description, d.status 
-                FROM dispatches d JOIN customers c ON d.customer_id = c.id 
-                WHERE d.status != "Completed" ORDER BY d.scheduled_date ASC
-            ''').fetchall()
-            if active_dispatches: 
-                st.dataframe(active_dispatches, use_container_width=True)
-            else:
-                st.info("No active pending or in-progress maintenance visits registered for today.")
-
-# ==========================================
-# TAB 4: UL 325 PM COMPLIANCE CHECKS & RECEIPT GENERATOR
-# ==========================================
-with tab4:
-    st.header("📋 Technical PM Checklist (UL 325 Safety Standards)")
-    st.caption("Technicians field deployed on property sites use this checklist system to execute safety sweeps and confirm legal safety operations.")
+# ------------------------------------------
+# TAB 2: PROPOSAL BUILDER ENGINE
+# ------------------------------------------
+with tab2:
+    st.header("Estimate Presentation & Surcharge Configuration Engine")
     
     with get_db_connection() as conn:
-        active_jobs = conn.execute('''
-            SELECT d.id, c.name, d.scheduled_date 
-            FROM dispatches d JOIN customers c ON d.customer_id = c.id
-            WHERE d.status != "Completed"
-        ''').fetchall()
-    
-    if not active_jobs:
-        st.info("No unresolved active service tickets found to submit safety checklist sweeps for.")
+        customer_choices = conn.execute("SELECT id, name FROM customers WHERE is_active = 1").fetchall()
+        
+    if not customer_choices:
+        st.info("Please create an active customer under Tab 1 before compiling job estimates.")
     else:
-        job_options = {f"Ticket #{j['id']} - Account: {j['name']} ({j['scheduled_date']})": j["id"] for j in active_jobs}
-        selected_job = st.selectbox("Target Service Ticket Identifier", options=list(job_options.keys()))
+        cust_dict = {row["name"]: row["id"] for row in customer_choices}
         
-        st.markdown("---")
-        st.markdown("#### Safety Mechanism Physical Function Interactivity")
-        
-        with st.form("pm_checklist_form", clear_on_submit=True):
-            pe = st.checkbox("Photo-Electric Eyes: Obstruction detection signals loop reversals properly and mechanisms align.")
-            loops = st.checkbox("Underground Vehicle Inductive Loops: Safety, shadow, and free-exit sensors track vehicle dynamics.")
-            edges = st.checkbox("Safety Contact Edges: Impact arrays immediately interrupt physical drive logic on gate impact.")
-            hardware = st.checkbox("Mechanical Infrastructure: Chains tensioned, rollers greased, hinge alignment verified, brackets stable.")
+        with st.form("proposal_generation_form"):
+            target_cust = st.selectbox("Select Project Prospect Customer Location", options=list(cust_dict.keys()))
             
-            tech_notes = st.text_area("Field Assessment Comments / Recommended Mandatory Infrastructure Upgrades")
-            
-            if st.form_submit_button("Verify Safety Sweep Compliance & Submit Report"):
+            c1, c2 = st.columns(2)
+            with c1:
+                op_type = st.selectbox("Select Target Gate Operator Core Drive System", [
+                    "Heavy Commercial Slide Gate Operator (Chain Drive)",
+                    "Hydraulic Articulated Arm Swing System",
+                    "High-Traffic Commercial Overhead Operator Lift Array"
+                ])
+                scope = st.text_area("Detailed Scope of Operational Fabrication Work")
+            with c2:
+                accessories = st.multiselect("Select Integrated UL 325 Safety Infrastructure Components", [
+                    "Monitored Reflective Retro Photo-Eye Beam Kit",
+                    "Pre-Formed Inductive Ground Loop Coils (Shadow/Exit Matrices)",
+                    "Four-Wire Resistive Contact Safety Pressure Edge Trim",
+                    "Wireless Access Proximity Credentials Card Reader Base"
+                ])
+                base_cost = st.number_input("Base Component Layout & Labor Quoted Price ($)", min_value=0.0, value=2500.0)
+                
+            if st.form_submit_button("Generate Complete Client Estimate Proposal"):
+                # Handle processing fee calculation loops matching settings metrics
+                percentage_multiplier = 1 + (new_fee / 100)
+                gross_calculated_total = base_cost * percentage_multiplier
+                acc_string = ", ".join(accessories)
+                
                 with get_db_connection() as conn:
-                    # Log safety answers
-                    conn.execute('''
-                        INSERT INTO pm_checklists (dispatch_id, photo_eyes_pass, loop_detectors_pass, edge_sensors_pass, gate_hardware_pass, technician_notes)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (job_options[selected_job], int(pe), int(loops), int(edges), int(hardware), tech_notes))
-                    
-                    # Complete ticket automatically
-                    conn.execute('UPDATE dispatches SET status = "Completed" WHERE id = ?', (job_options[selected_job],))
+                    conn.execute(
+                        "INSERT INTO proposals (customer_id, operator_type, accessories_list, scope_of_work, base_pricing, total_with_fees) VALUES (?, ?, ?, ?, ?, ?)",
+                        (cust_dict[target_cust], op_type, acc_string, scope, base_cost, gross_calculated_total)
+                    )
                     conn.commit()
-                st.success("✅ Legal safety log archived. Corresponding dispatch entry marked 'Completed'.")
+                st.success("Proposal parameters compiled successfully.")
                 st.rerun()
 
         st.markdown("---")
-        st.markdown("### 📜 Safety Inspection Historical Database & Printout Generator")
-        st.caption("Expand a finished historical row to view checklist details or generate a printable client receipt text file.")
-        
+        st.subheader("📋 Active Field Proposals Queue")
         with get_db_connection() as conn:
-            history = conn.execute('''
-                SELECT pm.id, c.name as client, pm.photo_eyes_pass as photo_eyes, pm.loop_detectors_pass as loop_detectors, 
-                       pm.edge_sensors_pass as safety_edges, pm.gate_hardware_pass as mechanical, pm.technician_notes as comments
-                FROM pm_checklists pm
-                JOIN dispatches d ON pm.dispatch_id = d.id
-                JOIN customers c ON d.customer_id = c.id ORDER BY pm.id DESC
-            ''').fetchall()
+            proposals_query = """
+                SELECT p.id, c.name as customer_name, p.operator_type, p.base_pricing, p.total_with_fees, p.status 
+                FROM proposals p JOIN customers c ON p.customer_id = c.id WHERE c.is_active = 1
+            """
+            prop_df = pd.read_sql_query(proposals_query, conn)
+            
+        if not prop_df.empty:
+            st.dataframe(prop_df, use_container_width=True, hide_index=True)
+            
+            # Decision Handling Block
+            st.markdown("### 🖋️ Present & Update Proposal State Decision")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                selected_prop_id = st.selectbox("Select Proposal Record Reference ID", options=prop_df["id"].tolist())
+                decision_state = st.radio("Customer Decision Status Choice", ["Accepted - Pass to Dispatch Routing", "Declined - Archive Record Information"])
+            with col_d2:
+                printed_sig_name = st.text_input("Authorized Signee Printed Legal Full Name")
+                st.caption("Touch/Finger Signing Protocol Capture Window simulator below:")
+                signature_confirm = st.checkbox("Signee hereby authorizes structural scope of work parameters digitally.")
+                
+            if st.button("Commit Status Verification Update"):
+                if decision_state == "Accepted - Pass to Dispatch Routing":
+                    if not printed_sig_name or not signature_confirm:
+                        st.error("Signee name authentication and signature check validations required.")
+                    else:
+                        with get_db_connection() as conn:
+                            # Update statement status
+                            conn.execute("UPDATE proposals SET status = 'Accepted' WHERE id = ?", (selected_prop_id,))
+                            # Grab related user fields to auto-create work dispatch ticket downstream
+                            prop_details = conn.execute("SELECT customer_id FROM proposals WHERE id = ?", (selected_prop_id,)).fetchone()
+                            conn.execute(
+                                "INSERT INTO dispatches (proposal_id, customer_id, client_signature, status) VALUES (?, ?, ?, 'Scheduled')",
+                                (selected_prop_id, prop_details["customer_id"], printed_sig_name)
+                            )
+                            conn.commit()
+                        st.success("Closing execution approved! Work ticket routed onto scheduling tracking boards.")
+                        st.rerun()
+                else:
+                    with get_db_connection() as conn:
+                        conn.execute("UPDATE proposals SET status = 'Declined' WHERE id = ?", (selected_prop_id,))
+                        conn.commit()
+                    st.warning("Proposal marked Declined and cleared from primary action pathways.")
+                    st.rerun()
+
+# ------------------------------------------
+# TAB 3: DISPATCH & SCHEDULING BOARD
+# ------------------------------------------
+with tab3:
+    st.header("Fleet Coordination Dispatch Board")
+    
+    with get_db_connection() as conn:
+        unassigned_tickets = conn.execute("""
+            SELECT d.id, c.name FROM dispatches d 
+            JOIN customers c ON d.customer_id = c.id 
+            WHERE d.status = 'Scheduled' AND d.technician_crew IS NULL
+        """).fetchall()
         
-        if history:
-            for record in history:
-                # Type mapping conversion to safe standard data objects before expansion rendering
-                rec_id = record['id']
-                rec_client = record['client']
-                rec_pe = record['photo_eyes']
-                rec_loops = record['loop_detectors']
-                rec_edges = record['safety_edges']
-                rec_mech = record['mechanical']
-                rec_comments = record['comments']
+    if not unassigned_tickets:
+        st.info("No unassigned work orders awaiting active routing updates.")
+    else:
+        st.subheader("Assign Crew & Calendar Fleet Assets")
+        ticket_map = {f"Order #{row['id']} - Location: {row['name']}": row['id'] for row in unassigned_tickets}
+        
+        with st.form("dispatch_scheduling_assignment"):
+            target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
+            crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", [
+                "Truck Fleet Unit Alpha (Lead Tech: Miller)",
+                "Truck Fleet Unit Bravo (Lead Tech: Ramirez)",
+                "Commercial Service Unit Charlie (Lead Tech: Evans)"
+            ])
+            target_date = st.date_input("Scheduled Field Deployment Targeting Date")
+            
+            if st.form_submit_button("Route Team and Deploy Ticket"):
+                with get_db_connection() as conn:
+                    conn.execute(
+                        "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
+                        (crew_assignment, target_date.strftime("%Y-%m-%d"), ticket_map[target_ticket])
+                    )
+                    conn.commit()
+                st.success("Crew asset matched. Active dispatch tickets forwarded to mobile truck arrays.")
+                st.rerun()
 
-                with st.expander(f"📄 Inspection Summary - Client: {rec_client} (ID: #{rec_id})"):
-                    col_view, col_action = st.columns([4, 1])
-                    
-                    with col_view:
-                        st.write(f"**Photo-Electric Eyes Check:** {'✅ PASS' if rec_pe else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Vehicle Loop Detectors Check:** {'✅ PASS' if rec_loops else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Safety Edge Arrays Check:** {'✅ PASS' if rec_edges else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Mechanical Hardware Review:** {'✅ PASS' if rec_mech else '❌ FAIL / NOT TESTED'}")
-                        st.write(f"**Technician Notes:** *{rec_comments}*")
-                    
-                    with col_action:
-                        # Construct a beautifully aligned text receipt layout
-                        receipt_text = f"""==================================================
-              GATEOPS PRO - SERVICE RECEIPT       
-==================================================
-Property / Client: {rec_client}
-Safety Inspection Log ID: #{rec_id}
-Date Generated: {datetime.now().strftime('%Y-%m-%d')}
---------------------------------------------------
-UL 325 COMPLIANCE SAFETY TESTING AUDIT:
+    st.markdown("---")
+    st.subheader("📅 Active Field Commitments Calendar Queue")
+    with get_db_connection() as conn:
+        active_schedule_df = pd.read_sql_query("""
+            SELECT d.id as ticket_id, c.name as customer, c.address, d.technician_crew, d.schedule_date, d.status 
+            FROM dispatches d JOIN customers c ON d.customer_id = c.id WHERE d.status != 'Completed'
+        """, conn)
+    if not active_schedule_df.empty:
+        st.dataframe(active_schedule_df, use_container_width=True, hide_index=True)
+    else:
+        st.write("No active pending crew dispatches currently deployed in field execution states.")
 
-[{"X" if rec_pe else " "}] Photo-Electric Eyes Alignment & Reverse Test
-[{"X" if rec_loops else " "}] Vehicle Inductive Ground Loop System Test
-[{"X" if rec_edges else " "}] Contact Safety Edge Reversal Sensor Test
-[{"X" if rec_mech else " "}] Mechanical Drive Chain & Hardware Structural Test
+# ------------------------------------------
+# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS
+# ------------------------------------------
+with tab4:
+    st.header("Mobile Field Service Terminal")
+    st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
+    
+    with get_db_connection() as conn:
+        field_active_tickets = conn.execute("""
+            SELECT d.id, c.name FROM dispatches d 
+            JOIN customers c ON d.customer_id = c.id 
+            WHERE d.status IN ('En Route', 'Scheduled') AND d.technician_crew IS NOT NULL
+        """).fetchall()
+        
+    if not field_active_tickets:
+        st.info("No active work dispatches are currently marked in open execution fields.")
+    else:
+        field_ticket_map = {f"Ticket #{row['id']} for {row['name']}": row['id'] for row in field_active_tickets}
+        selected_field_id = st.selectbox("Select Active Property Arrival Ticket Target", options=list(field_ticket_map.keys()))
+        
+        st.markdown("---")
+        st.subheader("📋 Enforced Safety Compliance Point Checks")
+        
+        with st.form("safety_audit_submission_form"):
+            t_id = field_ticket_map[selected_field_id]
+            st.info(f"Filing Compliance Metrics Verification Record for Active Operational Ticket Reference ID #{t_id}")
+            
+            serial_no = st.text_input("Gate Operator System Serial Number (For Historical Records)")
+            
+            col_chk1, col_chk2 = st.columns(2)
+            with col_chk1:
+                pe_check = st.checkbox("Photo-Eye Interruption Test: Beam break stops & completely reverses gate travel.")
+                loop_check = st.checkbox("Inductive Loop Matrix Check: Ground coils maintain loop presence hold calls safely.")
+            with col_chk2:
+                edge_check = st.checkbox("Safety Obstruction Edge Test: Contact impact strips activate safety reverse limits instantly.")
+                hw_check = st.checkbox("Mechanical Hardware Integrity: Drive tracking alignment, sprockets, and chains certified.")
+                
+            tech_comments = st.text_area("On-Site Service Engineering Progress Logs & Repair Text Entries")
+            
+            st.markdown("#### Final Job Handover Certification Signatures")
+            col_sig1, col_sig2 = st.columns(2)
+            with col_sig1:
+                tech_sig = st.text_input("Lead Certified Installer/Technician Name Signature Block")
+            with col_sig2:
+                cust_sig_verify = st.text_input("Property Representative/Site Authority Acceptance Name")
+                
+            if st.form_submit_button("Lock Diagnostics & Issue Formal Verification Certificate Report"):
+                if not serial_no or not tech_sig or not cust_sig_verify:
+                    st.error("Hardware Serial Number tracing constraints and explicit execution signatures are required to generate compliance certificates.")
+                else:
+                    with get_db_connection() as conn:
+                        conn.execute("""
+                            UPDATE dispatches 
+                            SET status = 'Completed', photo_eyes_pass = ?, loop_detectors_pass = ?, 
+                                edge_sensors_pass = ?, gate_hardware_pass = ?, technician_notes = ?, 
+                                serial_number = ? 
+                            WHERE id = ?
+                        """, (
+                            1 if pe_check else 0, 1 if loop_check else 0,
+                            1 if edge_check else 0, 1 if hw_check else 0,
+                            tech_comments, serial_no, t_id
+                        ))
+                        conn.commit()
+                    st.success("Compliance diagnostics cataloged permanently inside site history parameters! System receipt print-out streams generated below.")
+                    st.rerun()
 
---------------------------------------------------
-FIELD SERVICE TECHNICIAN SUMMARY NOTES:
-{rec_comments}
---------------------------------------------------
-Thank you for executing routine compliance maintenance agreements!
-==================================================
-"""
-                        # Binary fallback stream forces mobile browsers to use safe share sheets without screen navigation
-                        st.download_button(
-                            label="📥 Export Receipt",
-                            data=receipt_text,
-                            file_name=f"Service_Receipt_Log_{rec_id}_{rec_client.replace(' ', '_')}.txt",
-                            mime="application/octet-stream",
-                            key=f"dl_btn_secure_v2_{rec_id}"
-                        )
-        else:
-            st.info("No compiled testing history records found in the local file database.")
+    # ==========================================
+    # WORK ORDER COMPLIANCE HISTORY ARCHIVE
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📜 Historical Structural Compliance Log Files")
+    with get_db_connection() as conn:
+        history_df = pd.read_sql_query("""
+            SELECT d.id as ticket_id, c.name as location, d.serial_number, d.schedule_date, 
+                   d.photo_eyes_pass as photo_eyes, d.loop_detectors_pass as ground_loops, 
+                   d.edge_sensors_pass as safety_edges, d.gate_hardware_pass as mechanics, 
+                   d.technician_notes, p.total_with_fees as invoice_amt 
+            FROM dispatches d 
+            JOIN customers c ON d.customer_id = c.id 
+            JOIN proposals p ON d.proposal_id = p.id 
+            WHERE d.status = 'Completed'
+        """, conn)
+        
+    if not history_df.empty:
+        st.dataframe(history_df, use_container_width=True, hide_index=True)
+        
+        # Interactive Receipt Generator Module Tool
+        st.markdown("### 📥 Instantly Export Compliant Field Inspection Receipts")
+        target_receipt_id = st.selectbox("Select Completed Ticket Reference File target ID", options=history_df["ticket_id"].tolist())
+        target_row = history_df[history_df["ticket_id"] == target_receipt_id].iloc[0]
+        
+        with st.expander(f"📄 PREVIEW COMPLIANCE REPORT RECEIPT FOR TICKET #{target_receipt_id}", expanded=True):
+            st.markdown(f"## **OFFICIAL GATE COMPLIANCE DISPATCH LOG CERTIFICATE**")
+            st.write(f"**Site Installation Property:** {target_row['location']}")
+            st.write(f"**Drive Mechanical Hardware Serial Target Identifier:** `{target_row['serial_number']}`")
+            st.write(f"**Certified Completion Close Date Timestamp:** {target_row['schedule_date']}")
+            st.markdown("---")
+            st.markdown(f"### **UL 325 National Automation Safety Matrix Checklist Audit Result Elements:**")
+            st.write(f"✔️ **Photo-Eye Obstruction Beam Deflection Protection Array:** {'PASS ✅' if target_row['photo_eyes'] == 1 else 'FAIL ❌'}")
+            st.write(f"✔️ **Inductive Subterranean Magnetic Tracking Vehicle Ground Loops:** {'PASS ✅' if target_row['ground_loops'] == 1 else 'FAIL ❌'}")
+            st.write(f"✔️ **Resistive Compression Direction Reverse Contact Sensor Edges:** {'PASS ✅' if target_row['safety_edges'] == 1 else 'FAIL ❌'}")
+            st.write(f"✔️ **Structural Bearing Alignments, Drive Sprocket Tensions & Anchors:** {'PASS ✅' if target_row['mechanics'] == 1 else 'FAIL ❌'}")
+            st.markdown("---")
+            st.write(f"**On-Site Deployed Crew Engineering Notes:** *{target_row['technician_notes']}*")
+            st.markdown(f"#### **Total Completed Job Statement Balance (Including Custom {new_fee}% CC Fee Addition Layer): ${target_row['invoice_amt']:.2f}**")
+            
+            st.download_button(
+                label="📥 Print/Download Text Compliance Report Stream",
+                data=f"GateOps Pro Compliance Certificate\nLocation: {target_row['location']}\nSerial: {target_row['serial_number']}\nInvoice: ${target_row['invoice_amt']:.2f}\nStatus: Certified UL 325 Compliant",
+                file_name=f"GateOps_Compliance_Report_Ticket_{target_receipt_id}.txt",
+                mime="text/plain"
+            )
+    else:
+        st.info("No completed compliance entries currently stored inside memory logs.")
+
+# ------------------------------------------
+# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
+# ------------------------------------------
+with tab5:
+    st.header("Executive Board Performance Dash Analytics Dashboard")
+    
+    with get_db_connection() as conn:
+        metrics = conn.execute("""
+            SELECT 
+                COUNT(DISTINCT d.id) as total_jobs,
+                SUM(p.total_with_fees) as gross_revenue,
+                SUM(p.base_pricing) as base_revenue
+            FROM dispatches d 
+            JOIN proposals p ON d.proposal_id = p.id 
+            WHERE d.status = 'Completed'
+        """).fetchone()
+        
+    if not metrics or metrics["total_jobs"] == 0:
+        st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
+    else:
+        # Business Financial Performance Metric Cards Display
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        
+        gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
+        base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
+        surcharge_collected = gross_rev - base_rev
+        
+        with m_col1:
+            st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
+        with m_col2:
+            st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
+        with m_col3:
+            st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
+        with m_col4:
+            st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
+            
+        st.markdown("---")
+        st.subheader("📈 Revenue Source Pipelines Ledger")
+        with get_db_connection() as conn:
+            chart_data_df = pd.read_sql_query("""
+                SELECT c.name as customer_location, p.base_pricing as net_income, p.total_with_fees as gross_statement 
+                FROM dispatches d 
+                JOIN customers c ON d.customer_id = c.id 
+                JOIN proposals p ON d.proposal_id = p.id 
+                WHERE d.status = 'Completed'
+            """, conn)
+        
+        if not chart_data_df.empty:
+            st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
 
