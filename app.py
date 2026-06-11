@@ -25,12 +25,10 @@ def patch_and_migrate_database():
     """Forces old cloud database instances to dynamically adopt new schema updates."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # Inspect columns currently existing on Streamlit's server
         try:
             cursor.execute("PRAGMA table_info(dispatches)")
             existing_columns = [row[1] for row in cursor.fetchall()]
             
-            # If columns exist from the older build, alter the tables in place
             if existing_columns and "loops_pass" not in existing_columns:
                 conn.execute("ALTER TABLE dispatches ADD COLUMN serial_number TEXT;")
                 conn.execute("ALTER TABLE dispatches ADD COLUMN photo_eyes_pass INTEGER DEFAULT 0;")
@@ -40,7 +38,7 @@ def patch_and_migrate_database():
                 conn.execute("ALTER TABLE dispatches ADD COLUMN technician_notes TEXT;")
                 conn.commit()
         except sqlite3.OperationalError:
-            pass # Table might not be constructed yet, caught by init execution below
+            pass 
 
 def init_database_schema():
     """Compiles all required tables matching the operational blueprint."""
@@ -90,7 +88,7 @@ def init_database_schema():
             conn.execute("INSERT INTO system_settings (card_fee_percentage) VALUES (3.0)")
         conn.commit()
 
-# Execute automatic cloud safe alignments
+# Execute structural database alignments
 patch_and_migrate_database()
 init_database_schema()
 
@@ -102,9 +100,19 @@ with get_db_connection() as conn:
     current_fee_rate = settings_row["card_fee_percentage"]
 
 # ==========================================
-# 4. DASHBOARD SIDEBAR CORE ENGINE
+# 4. DASHBOARD SIDEBAR CORE ENGINE (SAAS TIER INTEGRATED)
 # ==========================================
-st.sidebar.title("⚙️ Workspace Controls")
+st.sidebar.title("⚙️ Workspace Management")
+st.sidebar.markdown("---")
+
+# SaaS Subscription Tier Matrix Picker
+installer_tier = st.sidebar.selectbox(
+    "Active Account License Tier",
+    ["Tier 1: Field Tech (Starter Plan)", 
+     "Tier 2: Ops Commander (Growth Plan)", 
+     "Tier 3: Enterprise Compliance (Premium Plan)"]
+)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Credit Card Fee Surcharge")
 new_fee = st.sidebar.number_input(
@@ -123,19 +131,23 @@ st.sidebar.markdown("---")
 st.sidebar.info("💡 Pro Tip: Passing processing surcharges directly to commercial clients can save your business thousands of dollars in annual merchant account swipe fees.")
 
 # ==========================================
-# 5. CORE INTERFACE LAYOUT MODULES
+# 5. DYNAMIC INTERFACE CONTROLS & GENERATION
 # ==========================================
 st.title("🚧 GateOps Pro Enterprise Suite")
-st.write("Complete Automated Operational Pipeline Framework")
 
-# Generate the Blueprint Navigation Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "👥 Client Intake & Directory", 
-    "📄 Proposal Builder Engine", 
-    "📅 Dispatch & Scheduling", 
-    "📋 Compliance Checks & Work Orders", 
-    "📊 Executive Performance Analytics"
-])
+# Enforce Navigation System Constraints based on the installer's active subscription tier
+if installer_tier == "Tier 1: Field Tech (Starter Plan)":
+    st.write("Logged Account Tier: `Tier 1 (Starter)`")
+    tab1, tab2 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine"])
+    tier_level = 1
+elif installer_tier == "Tier 2: Ops Commander (Growth Plan)":
+    st.write("Logged Account Tier: `Tier 2 (Growth Pro)`")
+    tab1, tab2, tab3, tab4 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch & Scheduling", "📋 Field Service Work Orders"])
+    tier_level = 2
+else:
+    st.write("Logged Account Tier: `Tier 3 (Enterprise Premium)`")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch & Scheduling", "📋 Compliance Checks & Work Orders", "📊 Executive Performance Analytics"])
+    tier_level = 3
 
 # ------------------------------------------
 # TAB 1: CLIENT INTAKE (WITH SOFT DELETE)
@@ -214,7 +226,7 @@ with tab2:
                 ])
                 scope = st.text_area("Detailed Scope of Operational Fabrication Work")
             with c2:
-                accessories = st.multiselect("Select Integrated UL 325 Safety Infrastructure Components", [
+                accessories = st.multiselect("Select Integrated Safety Infrastructure Components", [
                     "Monitored Reflective Retro Photo-Eye Beam Kit",
                     "Pre-Formed Inductive Ground Loop Coils (Shadow/Exit Matrices)",
                     "Four-Wire Resistive Contact Safety Pressure Edge Trim",
@@ -271,7 +283,7 @@ with tab2:
                                 (selected_prop_id, prop_details["customer_id"], printed_sig_name)
                             )
                             conn.commit()
-                        st.success("Closing execution approved! Work ticket routed onto scheduling tracking boards.")
+                        st.success("Closing execution approved! Work ticket routed onto tracking boards.")
                         st.rerun()
                 else:
                     with get_db_connection() as conn:
@@ -281,217 +293,236 @@ with tab2:
                     st.rerun()
 
 # ------------------------------------------
-# TAB 3: DISPATCH & SCHEDULING BOARD
+# TAB 3: DISPATCH & SCHEDULING (TIER 2 & 3 EXCLUSIVE)
 # ------------------------------------------
-with tab3:
-    st.header("Fleet Coordination Dispatch Board")
-    
-    with get_db_connection() as conn:
-        unassigned_tickets = conn.execute("""
-            SELECT d.id, c.name FROM dispatches d 
-            JOIN customers c ON d.customer_id = c.id 
-            WHERE d.status = 'Scheduled' AND d.technician_crew IS NULL
-        """).fetchall()
+if tier_level >= 2:
+    with tab3:
+        st.header("Fleet Coordination Dispatch Board")
         
-    if not unassigned_tickets:
-        st.info("No unassigned work orders awaiting active routing updates.")
-    else:
-        st.subheader("Assign Crew & Calendar Fleet Assets")
-        ticket_map = {f"Order #{row['id']} - Location: {row['name']}": row['id'] for row in unassigned_tickets}
-        
-        with st.form("dispatch_scheduling_assignment"):
-            target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
-            crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", [
-                "Truck Fleet Unit Alpha (Lead Tech: Miller)",
-                "Truck Fleet Unit Bravo (Lead Tech: Ramirez)",
-                "Commercial Service Unit Charlie (Lead Tech: Evans)"
-            ])
-            target_date = st.date_input("Scheduled Field Deployment Targeting Date")
+        with get_db_connection() as conn:
+            unassigned_tickets = conn.execute("""
+                SELECT d.id, c.name FROM dispatches d 
+                JOIN customers c ON d.customer_id = c.id 
+                WHERE d.status = 'Scheduled' AND d.technician_crew IS NULL
+            """).fetchall()
             
-            if st.form_submit_button("Route Team and Deploy Ticket"):
-                with get_db_connection() as conn:
-                    conn.execute(
-                        "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
-                        (crew_assignment, target_date.strftime("%Y-%m-%d"), ticket_map[target_ticket])
-                    )
-                    conn.commit()
-                st.success("Crew asset matched. Active dispatch tickets forwarded to mobile truck arrays.")
-                st.rerun()
-
-    st.markdown("---")
-    st.subheader("📅 Active Field Commitments Calendar Queue")
-    with get_db_connection() as conn:
-        active_schedule_df = pd.read_sql_query("""
-            SELECT d.id as ticket_id, c.name as customer, c.address, d.technician_crew, d.schedule_date, d.status 
-            FROM dispatches d JOIN customers c ON d.customer_id = c.id WHERE d.status != 'Completed'
-        """, conn)
-    if not active_schedule_df.empty:
-        st.dataframe(active_schedule_df, use_container_width=True, hide_index=True)
-    else:
-        st.write("No active pending crew dispatches currently deployed in field execution states.")
-
-# ------------------------------------------
-# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS
-# ------------------------------------------
-with tab4:
-    st.header("Mobile Field Service Terminal")
-    st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
-    
-    with get_db_connection() as conn:
-        field_active_tickets = conn.execute("""
-            SELECT d.id, c.name FROM dispatches d 
-            JOIN customers c ON d.customer_id = c.id 
-            WHERE d.status IN ('En Route', 'Scheduled') AND d.technician_crew IS NOT NULL
-        """).fetchall()
-        
-    if not field_active_tickets:
-        st.info("No active work dispatches are currently marked in open execution fields.")
-    else:
-        field_ticket_map = {f"Ticket #{row['id']} for {row['name']}": row['id'] for row in field_active_tickets}
-        selected_field_id = st.selectbox("Select Active Property Arrival Ticket Target", options=list(field_ticket_map.keys()))
-        
-        st.markdown("---")
-        st.subheader("📋 Enforced Safety Compliance Point Checks")
-        
-        with st.form("safety_audit_submission_form"):
-            t_id = field_ticket_map[selected_field_id]
-            st.info(f"Filing Compliance Metrics Verification Record for Active Operational Ticket Reference ID #{t_id}")
+        if not unassigned_tickets:
+            st.info("No unassigned work orders awaiting active routing updates.")
+        else:
+            st.subheader("Assign Crew & Calendar Fleet Assets")
+            ticket_map = {f"Order #{row['id']} - Location: {row['name']}": row['id'] for row in unassigned_tickets}
             
-            serial_no = st.text_input("Gate Operator System Serial Number (For Historical Records)")
-            
-            col_chk1, col_chk2 = st.columns(2)
-            with col_chk1:
-                pe_check = st.checkbox("Photo-Eye Interruption Test: Beam break stops & completely reverses gate travel.")
-                loop_check = st.checkbox("Inductive Loop Matrix Check: Ground coils maintain loop presence hold calls safely.")
-            with col_chk2:
-                edge_check = st.checkbox("Safety Obstruction Edge Test: Contact impact strips activate safety reverse limits instantly.")
-                hw_check = st.checkbox("Mechanical Hardware Integrity: Drive tracking alignment, sprockets, and chains certified.")
+            with st.form("dispatch_scheduling_assignment"):
+                target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
+                crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", [
+                    "Truck Fleet Unit Alpha (Lead Tech: Miller)",
+                    "Truck Fleet Unit Bravo (Lead Tech: Ramirez)",
+                    "Commercial Service Unit Charlie (Lead Tech: Evans)"
+                ])
+                target_date = st.date_input("Scheduled Field Deployment Targeting Date")
                 
-            tech_comments = st.text_area("On-Site Service Engineering Progress Logs & Repair Text Entries")
-            
-            st.markdown("#### Final Job Handover Certification Signatures")
-            col_sig1, col_sig2 = st.columns(2)
-            with col_sig1:
-                tech_sig = st.text_input("Lead Certified Installer/Technician Name Signature Block")
-            with col_sig2:
-                cust_sig_verify = st.text_input("Property Representative/Site Authority Acceptance Name")
-                
-            if st.form_submit_button("Lock Diagnostics & Issue Formal Verification Certificate Report"):
-                if not serial_no or not tech_sig or not cust_sig_verify:
-                    st.error("Hardware Serial Number tracing constraints and explicit execution signatures are required to generate compliance certificates.")
-                else:
+                if st.form_submit_button("Route Team and Deploy Ticket"):
                     with get_db_connection() as conn:
-                        conn.execute("""
-                            UPDATE dispatches 
-                            SET status = 'Completed', photo_eyes_pass = ?, loops_pass = ?, 
-                                edges_pass = ?, hardware_pass = ?, technician_notes = ?, 
-                                serial_number = ? 
-                            WHERE id = ?
-                        """, (
-                            1 if pe_check else 0, 1 if loop_check else 0,
-                            1 if edge_check else 0, 1 if hw_check else 0,
-                            tech_comments, serial_no, t_id
-                        ))
+                        conn.execute(
+                            "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
+                            (crew_assignment, target_date.strftime("%Y-%m-%d"), ticket_map[target_ticket])
+                        )
                         conn.commit()
-                    st.success("Compliance diagnostics cataloged permanently inside site history parameters! System receipt print-out streams generated below.")
+                    st.success("Crew asset matched. Active dispatch tickets forwarded to mobile truck arrays.")
                     st.rerun()
 
-    # ==========================================
-    # WORK ORDER COMPLIANCE HISTORY ARCHIVE
-    # ==========================================
-    st.markdown("---")
-    st.subheader("📜 Historical Structural Compliance Log Files")
-    with get_db_connection() as conn:
-        history_df = pd.read_sql_query("""
-            SELECT d.id as ticket_id, c.name as location, d.serial_number, d.schedule_date, 
-                   d.photo_eyes_pass as photo_eyes, 
-                   d.loops_pass as ground_loops, 
-                   d.edges_pass as safety_edges, 
-                   d.hardware_pass as mechanics, 
-                   d.technician_notes, p.total_with_fees as invoice_amt 
-            FROM dispatches d 
-            JOIN customers c ON d.customer_id = c.id 
-            JOIN proposals p ON d.proposal_id = p.id 
-            WHERE d.status = 'Completed'
-        """, conn)
-        
-    if not history_df.empty:
-        st.dataframe(history_df, use_container_width=True, hide_index=True)
-        
-        st.markdown("### 📥 Instantly Export Compliant Field Inspection Receipts")
-        target_receipt_id = st.selectbox("Select Completed Ticket Reference File target ID", options=history_df["ticket_id"].tolist())
-        target_row = history_df[history_df["ticket_id"] == target_receipt_id].iloc[0]
-        
-        with st.expander(f"📄 PREVIEW COMPLIANCE REPORT RECEIPT FOR TICKET #{target_receipt_id}", expanded=True):
-            st.markdown(f"## **OFFICIAL GATE COMPLIANCE DISPATCH LOG CERTIFICATE**")
-            st.write(f"**Site Installation Property:** {target_row['location']}")
-            st.write(f"**Drive Mechanical Hardware Serial Target Identifier:** `{target_row['serial_number']}`")
-            st.write(f"**Certified Completion Close Date Timestamp:** {target_row['schedule_date']}")
-            st.markdown("---")
-            st.markdown(f"### **UL 325 National Automation Safety Matrix Checklist Audit Result Elements:**")
-            st.write(f"✔️ **Photo-Eye Obstruction Beam Deflection Protection Array:** {'PASS ✅' if target_row['photo_eyes'] == 1 else 'FAIL ❌'}")
-            st.write(f"✔️ **Inductive Subterranean Magnetic Tracking Vehicle Ground Loops:** {'PASS ✅' if target_row['ground_loops'] == 1 else 'FAIL ❌'}")
-            st.write(f"✔️ **Resistive Compression Direction Reverse Contact Sensor Edges:** {'PASS ✅' if target_row['safety_edges'] == 1 else 'FAIL ❌'}")
-            st.write(f"✔️ **Structural Bearing Alignments, Drive Sprocket Tensions & Anchors:** {'PASS ✅' if target_row['mechanics'] == 1 else 'FAIL ❌'}")
-            st.markdown("---")
-            st.write(f"**On-Site Deployed Crew Engineering Notes:** *{target_row['technician_notes']}*")
-            st.markdown(f"#### **Total Completed Job Statement Balance (Including Custom {new_fee}% CC Fee Addition Layer): ${target_row['invoice_amt']:.2f}**")
-            
-            st.download_button(
-                label="📥 Print/Download Text Compliance Report Stream",
-                data=f"GateOps Pro Compliance Certificate\nLocation: {target_row['location']}\nSerial: {target_row['serial_number']}\nInvoice: ${target_row['invoice_amt']:.2f}\nStatus: Certified UL 325 Compliant",
-                file_name=f"GateOps_Compliance_Report_Ticket_{target_receipt_id}.txt",
-                mime="text/plain"
-            )
-    else:
-        st.info("No completed compliance entries currently stored inside memory logs.")
+        st.markdown("---")
+        st.subheader("📅 Active Field Commitments Calendar Queue")
+        with get_db_connection() as conn:
+            active_schedule_df = pd.read_sql_query("""
+                SELECT d.id as ticket_id, c.name as customer, c.address, d.technician_crew, d.schedule_date, d.status 
+                FROM dispatches d JOIN customers c ON d.customer_id = c.id WHERE d.status != 'Completed'
+            """, conn)
+        if not active_schedule_df.empty:
+            st.dataframe(active_schedule_df, use_container_width=True, hide_index=True)
+        else:
+            st.write("No active pending crew dispatches currently deployed in field execution states.")
 
 # ------------------------------------------
-# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
+# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS (TIER 2 & 3 EXCLUSIVE)
 # ------------------------------------------
-with tab5:
-    st.header("Executive Board Performance Dash Analytics Dashboard")
-    
-    with get_db_connection() as conn:
-        metrics = conn.execute("""
-            SELECT 
-                COUNT(DISTINCT d.id) as total_jobs,
-                SUM(p.total_with_fees) as gross_revenue,
-                SUM(p.base_pricing) as base_revenue
-            FROM dispatches d 
-            JOIN proposals p ON d.proposal_id = p.id 
-            WHERE d.status = 'Completed'
-        """).fetchone()
+if tier_level >= 2:
+    with tab4:
+        st.header("Mobile Field Service Terminal")
         
-    if not metrics or metrics["total_jobs"] == 0:
-        st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
-    else:
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        
-        gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
-        base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
-        surcharge_collected = gross_rev - base_rev
-        
-        with m_col1:
-            st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
-        with m_col2:
-            st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
-        with m_col3:
-            st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
-        with m_col4:
-            st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
-            
-        st.markdown("---")
-        st.subheader("📈 Revenue Source Pipelines Ledger")
         with get_db_connection() as conn:
-            chart_data_df = pd.read_sql_query("""
-                SELECT c.name as customer_location, p.base_pricing as net_income, p.total_with_fees as gross_statement 
-                FROM dispatches d 
+            field_active_tickets = conn.execute("""
+                SELECT d.id, c.name FROM dispatches d 
                 JOIN customers c ON d.customer_id = c.id 
+                WHERE d.status IN ('En Route', 'Scheduled') AND d.technician_crew IS NOT NULL
+            """).fetchall()
+            
+        if not field_active_tickets:
+            st.info("No active work dispatches are currently marked in open execution fields.")
+        else:
+            field_ticket_map = {f"Ticket #{row['id']} for {row['name']}": row['id'] for row in field_active_tickets}
+            selected_field_id = st.selectbox("Select Active Property Arrival Ticket Target", options=list(field_ticket_map.keys()))
+            
+            st.markdown("---")
+            
+            # --- TIER FEATURE ENFORCEMENT BOUNDARY LINK ---
+            if tier_level < 3:
+                st.warning("🔒 Upgrade to **Tier 3 (Enterprise Compliance)** to unlock UL 325 National Safety Checkbox Audits, Safety History Records, and Print-out Certificate Handover tools.")
+                
+                with st.form("basic_work_order_closure"):
+                    t_id = field_ticket_map[selected_field_id]
+                    basic_notes = st.text_area("On-Site Work Summary Progress Notes")
+                    if st.form_submit_button("Close Job Ticket (Basic)"):
+                        with get_db_connection() as conn:
+                            conn.execute("UPDATE dispatches SET status = 'Completed', technician_notes = ? WHERE id = ?", (basic_notes, t_id))
+                            conn.commit()
+                        st.success("Ticket closed successfully!")
+                        st.rerun()
+            else:
+                st.subheader("📋 Enforced Safety Compliance Point Checks (Tier 3 Feature Locked)")
+                st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
+                
+                with st.form("safety_audit_submission_form"):
+                    t_id = field_ticket_map[selected_field_id]
+                    st.info(f"Filing Compliance Metrics Verification Record for Active Operational Ticket Reference ID #{t_id}")
+                    
+                    serial_no = st.text_input("Gate Operator System Serial Number (For Historical Records)")
+                    
+                    col_chk1, col_chk2 = st.columns(2)
+                    with col_chk1:
+                        pe_check = st.checkbox("Photo-Eye Interruption Test: Beam break stops & completely reverses gate travel.")
+                        loop_check = st.checkbox("Inductive Loop Matrix Check: Ground coils maintain loop presence hold calls safely.")
+                    with col_chk2:
+                        edge_check = st.checkbox("Safety Obstruction Edge Test: Contact impact strips activate safety reverse limits instantly.")
+                        hw_check = st.checkbox("Mechanical Hardware Integrity: Drive tracking alignment, sprockets, and chains certified.")
+                        
+                    tech_comments = st.text_area("On-Site Service Engineering Progress Logs & Repair Text Entries")
+                    
+                    st.markdown("#### Final Job Handover Certification Signatures")
+                    col_sig1, col_sig2 = st.columns(2)
+                    with col_sig1:
+                        tech_sig = st.text_input("Lead Certified Installer/Technician Name Signature Block")
+                    with col_sig2:
+                        cust_sig_verify = st.text_input("Property Representative/Site Authority Acceptance Name")
+                        
+                    if st.form_submit_button("Lock Diagnostics & Issue Formal Verification Certificate Report"):
+                        if not serial_no or not tech_sig or not cust_sig_verify:
+                            st.error("Hardware Serial Number tracing constraints and explicit execution signatures are required to generate compliance certificates.")
+                        else:
+                            with get_db_connection() as conn:
+                                conn.execute("""
+                                    UPDATE dispatches 
+                                    SET status = 'Completed', photo_eyes_pass = ?, loops_pass = ?, 
+                                        edges_pass = ?, hardware_pass = ?, technician_notes = ?, 
+                                        serial_number = ? 
+                                    WHERE id = ?
+                                """, (
+                                    1 if pe_check else 0, 1 if loop_check else 0,
+                                    1 if edge_check else 0, 1 if hw_check else 0,
+                                    tech_comments, serial_no, t_id
+                                ))
+                                conn.commit()
+                            st.success("Compliance diagnostics cataloged permanently! System receipt print-out streams generated below.")
+                            st.rerun()
+
+        # ==========================================
+        # WORK ORDER COMPLIANCE HISTORY ARCHIVE (TIER 3 PREMIUM ONLY)
+        # ==========================================
+        if tier_level == 3:
+            st.markdown("---")
+            st.subheader("📜 Historical Structural Compliance Log Files")
+            with get_db_connection() as conn:
+                history_df = pd.read_sql_query("""
+                    SELECT d.id as ticket_id, c.name as location, d.serial_number, d.schedule_date, 
+                           d.photo_eyes_pass as photo_eyes, 
+                           d.loops_pass as ground_loops, 
+                           d.edges_pass as safety_edges, 
+                           d.hardware_pass as mechanics, 
+                           d.technician_notes, p.total_with_fees as invoice_amt 
+                    FROM dispatches d 
+                    JOIN customers c ON d.customer_id = c.id 
+                    JOIN proposals p ON d.proposal_id = p.id 
+                    WHERE d.status = 'Completed'
+                """, conn)
+                
+            if not history_df.empty:
+                st.dataframe(history_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("### 📥 Instantly Export Compliant Field Inspection Receipts")
+                target_receipt_id = st.selectbox("Select Completed Ticket Reference File target ID", options=history_df["ticket_id"].tolist())
+                target_row = history_df[history_df["ticket_id"] == target_receipt_id].iloc[0]
+                
+                with st.expander(f"📄 PREVIEW COMPLIANCE REPORT RECEIPT FOR TICKET #{target_receipt_id}", expanded=True):
+                    st.markdown(f"## **OFFICIAL GATE COMPLIANCE DISPATCH LOG CERTIFICATE**")
+                    st.write(f"**Site Installation Property:** {target_row['location']}")
+                    st.write(f"**Drive Mechanical Hardware Serial Target Identifier:** `{target_row['serial_number']}`")
+                    st.write(f"**Certified Completion Close Date Timestamp:** {target_row['schedule_date']}")
+                    st.markdown("---")
+                    st.markdown(f"### **UL 325 National Automation Safety Matrix Checklist Audit Result Elements:**")
+                    st.write(f"✔️ **Photo-Eye Obstruction Beam Deflection Protection Array:** {'PASS ✅' if target_row['photo_eyes'] == 1 else 'FAIL ❌'}")
+                    st.write(f"✔️ **Inductive Subterranean Magnetic Tracking Vehicle Ground Loops:** {'PASS ✅' if target_row['ground_loops'] == 1 else 'FAIL ❌'}")
+                    st.write(f"✔️ **Resistive Compression Direction Reverse Contact Sensor Edges:** {'PASS ✅' if target_row['safety_edges'] == 1 else 'FAIL ❌'}")
+                    st.write(f"✔️ **Structural Bearing Alignments, Drive Sprocket Tensions & Anchors:** {'PASS ✅' if target_row['mechanics'] == 1 else 'FAIL ❌'}")
+                    st.markdown("---")
+                    st.write(f"**On-Site Deployed Crew Engineering Notes:** *{target_row['technician_notes']}*")
+                    st.markdown(f"#### **Total Completed Job Statement Balance (Including Custom {new_fee}% CC Fee Addition Layer): ${target_row['invoice_amt']:.2f}**")
+                    
+                    st.download_button(
+                        label="📥 Print/Download Text Compliance Report Stream",
+                        data=f"GateOps Pro Compliance Certificate\nLocation: {target_row['location']}\nSerial: {target_row['serial_number']}\nInvoice: ${target_row['invoice_amt']:.2f}\nStatus: Certified UL 325 Compliant",
+                        file_name=f"GateOps_Compliance_Report_Ticket_{target_receipt_id}.txt",
+                        mime="text/plain"
+                    )
+            else:
+                st.info("No completed compliance entries currently stored inside memory logs.")
+
+# ------------------------------------------
+# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS (TIER 3 EXCLUSIVE)
+# ------------------------------------------
+if tier_level == 3:
+    with tab5:
+        st.header("Executive Board Performance Dash Analytics Dashboard")
+        
+        with get_db_connection() as conn:
+            metrics = conn.execute("""
+                SELECT 
+                    COUNT(DISTINCT d.id) as total_jobs,
+                    SUM(p.total_with_fees) as gross_revenue,
+                    SUM(p.base_pricing) as base_revenue
+                FROM dispatches d 
                 JOIN proposals p ON d.proposal_id = p.id 
                 WHERE d.status = 'Completed'
-            """, conn)
-        
-        if not chart_data_df.empty:
-            st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
+            """).fetchone()
+            
+        if not metrics or metrics["total_jobs"] == 0:
+            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
+        else:
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            
+            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
+            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
+            surcharge_collected = gross_rev - base_rev
+            
+            with m_col1:
+                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
+            with m_col2:
+                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
+            with m_col3:
+                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
+            with m_col4:
+                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
+                
+            st.markdown("---")
+            st.subheader("📈 Revenue Source Pipelines Ledger")
+            with get_db_connection() as conn:
+                chart_data_df = pd.read_sql_query("""
+                    SELECT c.name as customer_location, p.base_pricing as net_income, p.total_with_fees as gross_statement 
+                    FROM dispatches d 
+                    JOIN customers c ON d.customer_id = c.id 
+                    JOIN proposals p ON d.proposal_id = p.id 
+                    WHERE d.status = 'Completed'
+                """, conn)
+            
+            if not chart_data_df.empty:
+                st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
 
