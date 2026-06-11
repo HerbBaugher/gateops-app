@@ -4,13 +4,32 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # ==========================================
-# 1. PAGE ENGINE & SYSTEM INTENT INITIALIZATION
+# 1. PAGE ENGINE, WHITE-LABELING & INITIALIZATION
 # ==========================================
 st.set_page_config(
     page_title="GateOps Pro - Enterprise Workspace",
     page_icon="🚧",
     layout="wide"
 )
+
+# Custom Enterprise White-Labeling (CSS Injection to hide default Streamlit branding)
+st.markdown("""
+    <style>
+        #MainMenu {visibility: hidden;}       /* Hides top-right hamburger menu */
+        footer {visibility: hidden;}          /* Hides 'Made with Streamlit' footer */
+        header {visibility: hidden;}          /* Hides top decoration bar */
+        
+        /* Professional UI framing overrides */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #f0f2f6;
+            border-radius: 4px 4px 0px 0px;
+            padding: 10px 20px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. THREAD-SAFE DATABASE CONFIGURATION
@@ -100,12 +119,12 @@ with get_db_connection() as conn:
     current_fee_rate = settings_row["card_fee_percentage"]
 
 # ==========================================
-# 4. DASHBOARD SIDEBAR CORE ENGINE (SAAS TIER INTEGRATED)
+# 4. DASHBOARD SIDEBAR ENGINE (WITH SAAS PRICING PRINTS)
 # ==========================================
 st.sidebar.title("⚙️ Workspace Management")
 st.sidebar.markdown("---")
 
-# SaaS Subscription Tier Matrix Picker
+# SaaS Subscription Tier Matrix Selection Array
 installer_tier = st.sidebar.selectbox(
     "Active Account License Tier",
     ["Tier 1: Field Tech (Starter Plan)", 
@@ -113,7 +132,15 @@ installer_tier = st.sidebar.selectbox(
      "Tier 3: Enterprise Compliance (Premium Plan)"]
 )
 
+# Dynamic Pricing Label Translation Array
+tier_pricing = {
+    "Tier 1: Field Tech (Starter Plan)": "$49 / Month",
+    "Tier 2: Ops Commander (Growth Plan)": "$149 / Month",
+    "Tier 3: Enterprise Compliance (Premium Plan)": "$349 / Month"
+}
+st.sidebar.write(f"Subscription Value Billing: **{tier_pricing[installer_tier]}**")
 st.sidebar.markdown("---")
+
 st.sidebar.subheader("Credit Card Fee Surcharge")
 new_fee = st.sidebar.number_input(
     "Set Customer Card Processing Fee (%)", 
@@ -137,15 +164,15 @@ st.title("🚧 GateOps Pro Enterprise Suite")
 
 # Enforce Navigation System Constraints based on the installer's active subscription tier
 if installer_tier == "Tier 1: Field Tech (Starter Plan)":
-    st.write("Logged Account Tier: `Tier 1 (Starter)`")
-    tab1, tab2 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine"])
+    st.write("Logged Account Tier: `Tier 1 (Starter - $49/mo)`")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch Routing (Locked)", "📋 Compliance Audits (Locked)", "📊 Executive Analytics (Locked)"])
     tier_level = 1
 elif installer_tier == "Tier 2: Ops Commander (Growth Plan)":
-    st.write("Logged Account Tier: `Tier 2 (Growth Pro)`")
-    tab1, tab2, tab3, tab4 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch & Scheduling", "📋 Field Service Work Orders"])
+    st.write("Logged Account Tier: `Tier 2 (Growth Pro - $149/mo)`")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch & Scheduling", "📋 Field Service Work Orders", "📊 Executive Analytics (Locked)"])
     tier_level = 2
 else:
-    st.write("Logged Account Tier: `Tier 3 (Enterprise Premium)`")
+    st.write("Logged Account Tier: `Tier 3 (Enterprise Premium - $349/mo)`")
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Client Intake & Directory", "📄 Proposal Builder Engine", "📅 Dispatch & Scheduling", "📋 Compliance Checks & Work Orders", "📊 Executive Performance Analytics"])
     tier_level = 3
 
@@ -293,10 +320,26 @@ with tab2:
                     st.rerun()
 
 # ------------------------------------------
-# TAB 3: DISPATCH & SCHEDULING (TIER 2 & 3 EXCLUSIVE)
+# TAB 3: DISPATCH & SCHEDULING (UPSELL PROTECTED)
 # ------------------------------------------
-if tier_level >= 2:
-    with tab3:
+with tab3:
+    if tier_level < 2:
+        st.markdown("## 🔒 Unlock Crew Dispatch & Route Management")
+        st.write("You are currently using the **Field Tech Plan ($49/mo)**.")
+        
+        col_up1, col_up2 = st.columns(2)
+        with col_up1:
+            st.info("""
+            **What's inside the Ops Commander Tier ($149/mo):**
+            * 📅 Team Calendaring & Drag-Drop Fleet Asset Dispatching
+            * 🚛 Mobile Service Orders for Multi-Truck Operations
+            * 🔄 Live Work-Ticket Phase Updates ('En Route', 'Scheduled')
+            """)
+        with col_up2:
+            st.markdown("#### **Coordinate Multi-Crew Operations Efficiencies**")
+            st.write("Stop tracking crew routing appointments via text logs and messy clipboards.")
+            st.link_button("🚀 Step up to Ops Commander for +$100/mo", "https://yourbillingportal.com/upgrade")
+    else:
         st.header("Fleet Coordination Dispatch Board")
         
         with get_db_connection() as conn:
@@ -344,10 +387,14 @@ if tier_level >= 2:
             st.write("No active pending crew dispatches currently deployed in field execution states.")
 
 # ------------------------------------------
-# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS (TIER 2 & 3 EXCLUSIVE)
+# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS (UPSELL PROTECTED)
 # ------------------------------------------
-if tier_level >= 2:
-    with tab4:
+with tab4:
+    if tier_level < 2:
+        st.markdown("## 🔒 Unlock Mobile Field Terminal Handouts")
+        st.write("This module requires an upgraded structural installer license activation.")
+        st.info("💡 Field technician mobile work closure reporting unlocks automatically starting at the **Ops Commander ($149/mo)** service tier layer.")
+    else:
         st.header("Mobile Field Service Terminal")
         
         with get_db_connection() as conn:
@@ -365,10 +412,26 @@ if tier_level >= 2:
             
             st.markdown("---")
             
-            # --- TIER FEATURE ENFORCEMENT BOUNDARY LINK ---
+            # --- FEATURE IN-APP UPSELL UPGRADE CARD FOR COMPLIANCE MATRIX ---
             if tier_level < 3:
-                st.warning("🔒 Upgrade to **Tier 3 (Enterprise Compliance)** to unlock UL 325 National Safety Checkbox Audits, Safety History Records, and Print-out Certificate Handover tools.")
+                st.markdown("### 🔒 Protect Your Business with UL 325 Safety Verification Matrices")
+                st.write("You are currently on the **Ops Commander Plan ($149/mo)**.")
                 
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    st.warning("""
+                    **What locks inside the Enterprise Compliance Plan ($349/mo):**
+                    * 🛑 Forced Photo-Eye, Loop Matrix, and Contact Edge Safety Checkpoints
+                    * 📄 Legal Verification Receipt & PDF Inspection Certificate Handouts
+                    * 🛡️ Multi-Million Dollar Corporate Liability Lawsuit Protection Logs
+                    """)
+                with col_c2:
+                    st.markdown("#### **Enforced Standardizations Keep You Out of Court**")
+                    st.write("Forcing your technicians to pass UL 325 checkpoints before closing work logs provides massive legal protection.")
+                    st.link_button("🚀 Unlock Enterprise Compliance for +$200/mo", "https://yourbillingportal.com/upgrade")
+                
+                st.markdown("---")
+                st.subheader("📝 Close Basic Field Work Log")
                 with st.form("basic_work_order_closure"):
                     t_id = field_ticket_map[selected_field_id]
                     basic_notes = st.text_area("On-Site Work Summary Progress Notes")
@@ -379,7 +442,7 @@ if tier_level >= 2:
                         st.success("Ticket closed successfully!")
                         st.rerun()
             else:
-                st.subheader("📋 Enforced Safety Compliance Point Checks (Tier 3 Feature Locked)")
+                st.subheader("📋 Enforced Safety Compliance Point Checks (Tier 3 Activated)")
                 st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
                 
                 with st.form("safety_audit_submission_form"):
@@ -477,10 +540,26 @@ if tier_level >= 2:
                 st.info("No completed compliance entries currently stored inside memory logs.")
 
 # ------------------------------------------
-# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS (TIER 3 EXCLUSIVE)
+# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS (UPSELL PROTECTED)
 # ------------------------------------------
-if tier_level == 3:
-    with tab5:
+with tab5:
+    if tier_level < 3:
+        st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
+        st.write(f"You are currently leveraging the **{installer_tier}** configuration pattern.")
+        
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            st.info("""
+            **What activates inside the Premium Enterprise License ($349/mo):**
+            * 📊 Live Gross Profit Margin Tracing Ledger Blocks
+            * 💳 Exact Surcharges Collected Metric Card Tracking (Saved Swipe Cash)
+            * 📈 Client Account Revenue Pipeline Comparison Bar Charts
+            """)
+        with col_ex2:
+            st.markdown("#### **Gain Complete Data Clarity Over Your Operation**")
+            st.write("Stop guessing your numbers. View precisely how much card processing fee overhead your business has bypassed and saved month-over-month.")
+            st.link_button("🚀 Upgrade to Enterprise Plan for Full Access", "https://yourbillingportal.com/upgrade")
+    else:
         st.header("Executive Board Performance Dash Analytics Dashboard")
         
         with get_db_connection() as conn:
@@ -525,4 +604,5 @@ if tier_level == 3:
             
             if not chart_data_df.empty:
                 st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
+
 
