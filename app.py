@@ -2,72 +2,56 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
+import uuid
+import os
 
 # ==========================================
-# 1. PAGE ENGINE, WHITE-LABELING & INITIALIZATION
+# DEMO MODE BANNER + SESSION-ISOLATED DATABASE
 # ==========================================
-st.set_page_config(
-    page_title="GateOps Pro - Enterprise Workspace",
-    page_icon="🚧",
-    layout="wide"
-)
 
-# Safe Enterprise White-Labeling (Hides branding without collapsing layout frames)
-st.markdown("""
-    <style>
-        #MainMenu {visibility: hidden;}       /* Hides top-right hamburger menu icon */
-        footer {visibility: hidden;}          /* Hides 'Made with Streamlit' text */
-        
-        /* Targets ONLY the small colored decoration accent line, keeping structural headers safe */
-        div[data-testid="stHeader"] {
-            background-color: rgba(0,0,0,0);
-        }
-        
-        /* Professional UI framing overrides for workspace layout */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            background-color: #f0f2f6;
-            border-radius: 4px 4px 0px 0px;
-            padding: 10px 20px;
-        }
-    </style>
-""", unsafe_allow_html=True)
+def show_demo_banner():
+    st.markdown(
+        """
+        <div style="
+            background-color:#1E90FF;
+            padding:15px;
+            border-radius:8px;
+            margin-bottom:20px;
+            color:white;
+            font-size:20px;
+            font-weight:bold;
+            text-align:center;">
+            🚧 DEMO MODE — Your data is temporary and isolated to your session.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-# ==========================================
-# 2. THREAD-SAFE DATABASE CONFIGURATION
-# ==========================================
-def get_db_connection():
-    """Generates an isolated, thread-safe local file connection factory."""
-    conn = sqlite3.connect("gateops_enterprise_production.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_session_db():
+    """
+    Each visitor gets their own temporary SQLite database.
+    This DB persists only while their Streamlit session is alive.
+    It is never shared between users.
+    """
+    if "db_path" not in st.session_state:
+        unique_id = str(uuid.uuid4())[:8]
+        db_name = f"demo_db_{unique_id}.sqlite"
+        st.session_state.db_path = db_name
+        initialize_demo_db(st.session_state.db_path)
 
-def patch_and_migrate_database():
-    """Forces old cloud database instances to dynamically adopt new schema updates."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA table_info(dispatches)")
-            existing_columns = [row[1] for row in cursor.fetchall()]
-            
-            if existing_columns and "loops_pass" not in existing_columns:
-                conn.execute("ALTER TABLE dispatches ADD COLUMN serial_number TEXT;")
-                conn.execute("ALTER TABLE dispatches ADD COLUMN photo_eyes_pass INTEGER DEFAULT 0;")
-                conn.execute("ALTER TABLE dispatches ADD COLUMN loops_pass INTEGER DEFAULT 0;")
-                conn.execute("ALTER TABLE dispatches ADD COLUMN edges_pass INTEGER DEFAULT 0;")
-                conn.execute("ALTER TABLE dispatches ADD COLUMN hardware_pass INTEGER DEFAULT 0;")
-                conn.execute("ALTER TABLE dispatches ADD COLUMN technician_notes TEXT;")
-                conn.commit()
-        except sqlite3.OperationalError:
-            pass 
+    return st.session_state.db_path
 
-def init_database_schema():
-    """Compiles all required tables matching the operational blueprint."""
-    with get_db_connection() as conn:
-        # App System Configuration Profile
-        conn.execute('''
+def initialize_demo_db(db_path):
+    """
+    Creates the schema for a brand-new isolated demo database containing
+    all unified operational schema components.
+    """
+    if not os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        # System Settings Profile
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS system_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 card_fee_percentage REAL DEFAULT 3.0,
@@ -75,7 +59,7 @@ def init_database_schema():
             )
         ''')
         # Customers Table (with Soft Delete integration)
-        conn.execute('''
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS customers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT,
@@ -83,7 +67,7 @@ def init_database_schema():
             )
         ''')
         # Proposals Table
-        conn.execute('''
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS proposals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER,
                 operator_type TEXT, accessories_list TEXT, scope_of_work TEXT,
@@ -92,7 +76,7 @@ def init_database_schema():
             )
         ''')
         # Work Orders / Active Dispatches Table
-        conn.execute('''
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS dispatches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_id INTEGER,
                 customer_id INTEGER, technician_crew TEXT, schedule_date TEXT,
@@ -105,30 +89,68 @@ def init_database_schema():
             )
         ''')
         
-        # Populate default settings row if completely fresh build
-        check = conn.execute("SELECT COUNT(*) as count FROM system_settings").fetchone()
-        if check["count"] == 0:
-            conn.execute("INSERT INTO system_settings (card_fee_percentage) VALUES (3.0)")
+        # Populate default settings row inside the fresh isolated instance
+        cur.execute("INSERT INTO system_settings (id, card_fee_percentage) VALUES (1, 3.0)")
+        
         conn.commit()
+        conn.close()
 
-# Execute structural database alignments
-patch_and_migrate_database()
-init_database_schema()
+def get_connection():
+    """
+    Returns a thread-safe row-factory SQLite connection to the 
+    session-isolated temporary DB file context.
+    """
+    db_path = get_session_db()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 # ==========================================
-# 3. GLOBAL WORKSPACE SETTINGS CACHING (WITH FAULT PROTECTION)
+# 1. PAGE ENGINE, WHITE-LABELING & INITIALIZATION
 # ==========================================
-current_fee_rate = 3.0 # Hardcoded safety fallback default
+st.set_page_config(
+    page_title="GateOps Pro - Enterprise Workspace",
+    page_icon="🚧",
+    layout="wide"
+)
+
+# Safe Enterprise White-Labeling (Hides branding framework layout elements)
+st.markdown(
+    """
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        div[data-testid="stHeader"] { background-color: rgba(0,0,0,0); }
+        .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #f0f2f6;
+            border-radius: 4px 4px 0px 0px;
+            padding: 10px 20px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ==========================================
+# SHOW DEMO BANNER
+# ==========================================
+show_demo_banner()
+
+# ==========================================
+# 3. GLOBAL WORKSPACE SETTINGS CACHING (ROUTED TO SESSION-DB)
+# ==========================================
+current_fee_rate = 3.0  # Safe fallback default baseline
 try:
-    with get_db_connection() as conn:
+    with get_connection() as conn:
         settings_row = conn.execute("SELECT * FROM system_settings WHERE id = 1").fetchone()
         if settings_row is not None:
             current_fee_rate = settings_row["card_fee_percentage"]
 except Exception:
-    st.warning("⚠️ Local workspace database is currently synchronizing. Running cache defaults.")
+    pass
 
 # ==========================================
-# 4. DASHBOARD SIDEBAR ENGINE (FORCED HIGH RENDERING)
+# 4. DASHBOARD SIDEBAR ENGINE
 # ==========================================
 st.sidebar.title("⚙️ Workspace Management")
 st.sidebar.markdown("---")
@@ -158,13 +180,13 @@ new_fee = st.sidebar.number_input(
 
 if new_fee != current_fee_rate:
     try:
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             conn.execute("UPDATE system_settings SET card_fee_percentage = ? WHERE id = 1", (new_fee,))
             conn.commit()
         st.sidebar.success(f"Fee updated to {new_fee}% globally!")
         st.rerun()
     except Exception:
-        st.sidebar.error("Database table busy. Changes cached locally.")
+        st.sidebar.error("Local database sync exception.")
 
 st.sidebar.markdown("---")
 st.sidebar.info("💡 Pro Tip: Passing processing surcharges directly to commercial clients can save your business thousands of dollars in annual merchant account swipe fees.")
@@ -206,7 +228,7 @@ with tab1:
             
             if st.form_submit_button("Save Property Target"):
                 if c_name:
-                    with get_db_connection() as conn:
+                    with get_connection() as conn:
                         conn.execute(
                             "INSERT INTO customers (name, phone, email, address, notes) VALUES (?, ?, ?, ?, ?)",
                             (c_name, c_phone, c_email, c_address, c_notes)
@@ -219,7 +241,7 @@ with tab1:
 
     with col2:
         st.subheader("Active Customer Registry")
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             active_df = pd.read_sql_query("SELECT id, name, phone, email, address, notes FROM customers WHERE is_active = 1", conn)
         
         if not active_df.empty:
@@ -231,7 +253,7 @@ with tab1:
             target_archive = st.selectbox("Select property profile to safely archive:", options=list(archive_map.keys()))
             
             if st.button("Archive Profile Row", type="primary"):
-                with get_db_connection() as conn:
+                with get_connection() as conn:
                     conn.execute("UPDATE customers SET is_active = 0 WHERE id = ?", (archive_map[target_archive],))
                     conn.commit()
                 st.success(f"Archived {target_archive} safely out of dispatch registries.")
@@ -245,7 +267,7 @@ with tab1:
 with tab2:
     st.header("Estimate Presentation & Surcharge Configuration Engine")
     
-    with get_db_connection() as conn:
+    with get_connection() as conn:
         customer_choices = conn.execute("SELECT id, name FROM customers WHERE is_active = 1").fetchall()
         
     if not customer_choices:
@@ -278,7 +300,7 @@ with tab2:
                 gross_calculated_total = base_cost * percentage_multiplier
                 acc_string = ", ".join(accessories)
                 
-                with get_db_connection() as conn:
+                with get_connection() as conn:
                     conn.execute(
                         "INSERT INTO proposals (customer_id, operator_type, accessories_list, scope_of_work, base_pricing, total_with_fees) VALUES (?, ?, ?, ?, ?, ?)",
                         (cust_dict[target_cust], op_type, acc_string, scope, base_cost, gross_calculated_total)
@@ -289,7 +311,7 @@ with tab2:
 
         st.markdown("---")
         st.subheader("📋 Active Field Proposals Queue")
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             proposals_query = """
                 SELECT p.id, c.name as customer_name, p.operator_type, p.base_pricing, p.total_with_fees, p.status 
                 FROM proposals p JOIN customers c ON p.customer_id = c.id WHERE c.is_active = 1
@@ -314,7 +336,7 @@ with tab2:
                     if not printed_sig_name or not signature_confirm:
                         st.error("Signee name authentication and signature check validations required.")
                     else:
-                        with get_db_connection() as conn:
+                        with get_connection() as conn:
                             conn.execute("UPDATE proposals SET status = 'Accepted' WHERE id = ?", (selected_prop_id,))
                             prop_details = conn.execute("SELECT customer_id FROM proposals WHERE id = ?", (selected_prop_id,)).fetchone()
                             conn.execute(
@@ -325,7 +347,7 @@ with tab2:
                         st.success("Closing execution approved! Work ticket routed onto tracking boards.")
                         st.rerun()
                 else:
-                    with get_db_connection() as conn:
+                    with get_connection() as conn:
                         conn.execute("UPDATE proposals SET status = 'Declined' WHERE id = ?", (selected_prop_id,))
                         conn.commit()
                     st.warning("Proposal marked Declined and cleared from primary action pathways.")
@@ -354,7 +376,7 @@ with tab3:
     else:
         st.header("Fleet Coordination Dispatch Board")
         
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             unassigned_tickets = conn.execute("""
                 SELECT d.id, c.name FROM dispatches d 
                 JOIN customers c ON d.customer_id = c.id 
@@ -377,7 +399,7 @@ with tab3:
                 target_date = st.date_input("Scheduled Field Deployment Targeting Date")
                 
                 if st.form_submit_button("Route Team and Deploy Ticket"):
-                    with get_db_connection() as conn:
+                    with get_connection() as conn:
                         conn.execute(
                             "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
                             (crew_assignment, target_date.strftime("%Y-%m-%d"), ticket_map[target_ticket])
@@ -388,7 +410,7 @@ with tab3:
 
         st.markdown("---")
         st.subheader("📅 Active Field Commitments Calendar Queue")
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             active_schedule_df = pd.read_sql_query("""
                 SELECT d.id as ticket_id, c.name as customer, c.address, d.technician_crew, d.schedule_date, d.status 
                 FROM dispatches d JOIN customers c ON d.customer_id = c.id WHERE d.status != 'Completed'
@@ -409,7 +431,7 @@ with tab4:
     else:
         st.header("Mobile Field Service Terminal")
         
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             field_active_tickets = conn.execute("""
                 SELECT d.id, c.name FROM dispatches d 
                 JOIN customers c ON d.customer_id = c.id 
@@ -448,7 +470,7 @@ with tab4:
                     t_id = field_ticket_map[selected_field_id]
                     basic_notes = st.text_area("On-Site Work Summary Progress Notes")
                     if st.form_submit_button("Close Job Ticket (Basic)"):
-                        with get_db_connection() as conn:
+                        with get_connection() as conn:
                             conn.execute("UPDATE dispatches SET status = 'Completed', technician_notes = ? WHERE id = ?", (basic_notes, t_id))
                             conn.commit()
                         st.success("Ticket closed successfully!")
@@ -484,7 +506,7 @@ with tab4:
                         if not serial_no or not tech_sig or not cust_sig_verify:
                             st.error("Hardware Serial Number tracing constraints and explicit execution signatures are required to generate compliance certificates.")
                         else:
-                            with get_db_connection() as conn:
+                            with get_connection() as conn:
                                 conn.execute("""
                                     UPDATE dispatches 
                                     SET status = 'Completed', photo_eyes_pass = ?, loops_pass = ?, 
@@ -506,7 +528,7 @@ with tab4:
         if tier_level == 3:
             st.markdown("---")
             st.subheader("📜 Historical Structural Compliance Log Files")
-            with get_db_connection() as conn:
+            with get_connection() as conn:
                 history_df = pd.read_sql_query("""
                     SELECT d.id as ticket_id, c.name as location, d.serial_number, d.schedule_date, 
                            d.photo_eyes_pass as photo_eyes, 
@@ -574,7 +596,7 @@ with tab5:
     else:
         st.header("Executive Board Performance Dash Analytics Dashboard")
         
-        with get_db_connection() as conn:
+        with get_connection() as conn:
             metrics = conn.execute("""
                 SELECT 
                     COUNT(DISTINCT d.id) as total_jobs,
@@ -605,7 +627,7 @@ with tab5:
                 
             st.markdown("---")
             st.subheader("📈 Revenue Source Pipelines Ledger")
-            with get_db_connection() as conn:
+            with get_connection() as conn:
                 chart_data_df = pd.read_sql_query("""
                     SELECT c.name as customer_location, p.base_pricing as net_income, p.total_with_fees as gross_statement 
                     FROM dispatches d 
@@ -616,4 +638,3 @@ with tab5:
             
             if not chart_data_df.empty:
                 st.bar_chart(chart_data_df, x="customer_location", y=["net_income", "gross_statement"], use_container_width=True)
-
