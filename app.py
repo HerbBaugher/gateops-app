@@ -54,7 +54,6 @@ def initialize_demo_db(db_path):
                 notes TEXT, is_active INTEGER DEFAULT 1
             )
         ''')
-        # Updated Proposals schema to hold dynamic multi-gate payload strings
         cur.execute('''
             CREATE TABLE IF NOT EXISTS proposals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER,
@@ -182,7 +181,6 @@ if new_fee != current_fee_rate:
     except Exception:
         pass
 
-# Interactive Field Technician Registry Manager in Sidebar
 st.sidebar.markdown("---")
 st.sidebar.subheader("🛠️ Fleet Tech Profile Builder")
 new_tech_entry = st.sidebar.text_input("Register New Technician / Crew Identity")
@@ -293,10 +291,9 @@ with tab2:
         st.markdown("---")
         st.subheader("Select Integrated Safety and Accessory Components")
         
-        # Salesperson Custom Accessory Generation
         col_acc1, col_acc2 = st.columns([3, 1])
         with col_acc1:
-            new_acc_entry = st.text_input("Missing an accessory? Enter Custom System Item Element:", placeholder="e.g., Siren Operated Sensor (SOS) Audio Sensor Y3")
+            new_acc_entry = st.text_input("Missing an accessory? Enter Custom System Item Element:", placeholder="e.g., Siren Operated Sensor (SOS)")
         with col_acc2:
             if st.button("➕ Add Accessory Option"):
                 if new_acc_entry and new_acc_entry not in st.session_state.custom_accessories:
@@ -305,7 +302,6 @@ with tab2:
                     
         accessories = st.multiselect("Check all system options integrated onto this property package:", st.session_state.custom_accessories)
         
-        # Calculate running total dynamically based on staged entries
         calc_base_cost = sum(item["qty"] * item["cost"] for item in st.session_state.multi_gates)
         
         st.markdown("---")
@@ -326,7 +322,6 @@ with tab2:
                 percentage_multiplier = 1 + (new_fee / 100)
                 gross_calculated_total = final_base_cost * percentage_multiplier
                 
-                # Transform multi-gate list elements into storage string formatting sequences
                 gate_payload_string = " | ".join([f"{i['qty']}x {i['name']} ({i['location']}) @ ${i['cost']:.2f}" for i in st.session_state.multi_gates])
                 acc_string = ", ".join(accessories)
                 
@@ -342,9 +337,12 @@ with tab2:
 
         st.markdown("---")
         st.subheader("Accept or Deny Proposal")
+        
+        # FIX: p.customer_id is now explicitly queried into the DataFrame
         with get_connection() as conn:
             proposals_query = """
-                SELECT p.id, c.name as customer_name, p.operator_payload as itemized_layouts, p.base_pricing, p.total_with_fees, p.status, p.scope_of_work, p.logo_name, p.accessories_list
+                SELECT p.id, p.customer_id, c.name as customer_name, p.operator_payload as itemized_layouts, 
+                       p.base_pricing, p.total_with_fees, p.status, p.scope_of_work, p.logo_name, p.accessories_list
                 FROM proposals p JOIN customers c ON p.customer_id = c.id WHERE c.is_active = 1
             """
             prop_df = pd.read_sql_query(proposals_query, conn)
@@ -355,7 +353,6 @@ with tab2:
             st.markdown("### 🖋️ Live Review, Edit & Output Processing Module")
             selected_prop_id = st.selectbox("Select Active Document Target Reference ID", options=prop_df["id"].tolist())
             
-            # Extract row values to perform hot modification edits inside the template view
             target_row = prop_df[prop_df["id"] == selected_prop_id].iloc[0]
             
             st.markdown("#### 🔄 Real-Time Negotiation Override Form")
@@ -382,7 +379,6 @@ with tab2:
             with col_d2:
                 st.markdown("#### 🖨️ Document Output Simulator Console")
                 
-                # HTML print layout generator incorporating selected asset logos
                 logo_emoji = "🛡️" if "Shield" in target_row["logo_name"] else ("👑" if "Gold" in target_row["logo_name"] else "⚜️")
                 
                 html_preview = f"""
@@ -417,12 +413,13 @@ with tab2:
                     else:
                         with get_connection() as conn:
                             conn.execute("UPDATE proposals SET status = 'Accepted' WHERE id = ?", (selected_prop_id,))
+                            # FIX: target_row["customer_id"] now maps flawlessly
                             conn.execute(
                                 "INSERT INTO dispatches (proposal_id, customer_id, client_signature, status) VALUES (?, ?, ?, 'Scheduled')",
-                                (selected_prop_id, target_row["customer_id"], printed_sig_name)
+                                (selected_prop_id, int(target_row["customer_id"]), printed_sig_name)
                             )
                             conn.commit()
-                        st.success("Closing execution approved! Task parameters passed onward.")
+                        st.success("Closing execution approved! Task parameters passed onward to tracking calendars.")
                         st.rerun()
                 else:
                     with get_connection() as conn:
@@ -431,7 +428,7 @@ with tab2:
                     st.rerun()
 
 # ------------------------------------------
-# TAB 3: DISPATCH & SCHEDULING (UPSELL PROTECTED)
+# TAB 3: DISPATCH & SCHEDULING
 # ------------------------------------------
 with tab3:
     if tier_level < 2:
@@ -440,22 +437,16 @@ with tab3:
     else:
         st.header("Fleet Coordination Dispatch Board")
         
-        # Load Scheduled Commitments data framework array to populate the highlighted conflict management mapping engine
         with get_connection() as conn:
             calendar_query_df = pd.read_sql_query("SELECT schedule_date, technician_crew FROM dispatches WHERE status != 'Completed' AND schedule_date IS NOT NULL", conn)
         
-        # ==========================================
-        # 📅 ACTIVE FIELD COMMITMENTS CALENDAR QUEUE
-        # ==========================================
         st.subheader("📅 Active Field Commitments Calendar Queue")
         st.caption("Real-Time Structural Month-to-Month Schedule Map Grid (Conflict Mitigation Engine)")
         
-        # Extract date collections that hold entries currently assigned to active truck teams
         scheduled_dates_set = set(calendar_query_df["schedule_date"].tolist())
         
-        # Generate dynamic rolling 3-month grid arrays containing day elements matching layout parameters
         base_date = datetime.now()
-        months_to_display = [0, 1, 2] # Current Month, Next Month, Month After Next
+        months_to_display = [0, 1, 2]
         
         c_cols = st.columns(3)
         for idx, m_offset in enumerate(months_to_display):
@@ -466,17 +457,14 @@ with tab3:
                 
                 st.markdown(f"##### 📆 {target_month_date.strftime('%B %Y')}")
                 
-                # Build an intuitive interactive mini visual array map block
                 day_buttons_html = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size:11px;'>"
                 days_labels = ["S","M","T","W","T","F","S"]
                 for dl in days_labels:
                     day_buttons_html += f"<div style='font-weight:bold; color:#777;'>{dl}</div>"
                     
-                # Create grid matrix blocks mapping out standard 31-day increments safely
                 for d_idx in range(1, 32):
                     test_str = f"{y_num}-{m_num:02d}-{d_idx:02d}"
                     if test_str in scheduled_dates_set:
-                        # Highlight operational date blocks that hold matching database items
                         day_buttons_html += f"<div style='background-color:#FF4B4B; color:white; font-weight:bold; border-radius:4px; padding:2px;' title='Conflict Lock: Job Appointed'>{d_idx}</div>"
                     else:
                         day_buttons_html += f"<div style='background-color:#e0e0e0; color:#333; border-radius:4px; padding:2px;'>{d_idx}</div>"
@@ -500,15 +488,12 @@ with tab3:
             
             with st.form("dispatch_scheduling_assignment"):
                 target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
-                
-                # Dynamic Dropdown tracking the technician arrays populated via Sidebar Configuration
                 crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", options=st.session_state.tech_crews)
                 target_date = st.date_input("Scheduled Field Deployment Targeting Date")
                 
                 if st.form_submit_button("Route Team and Deploy Ticket"):
                     chosen_date_str = target_date.strftime("%Y-%m-%d")
                     
-                    # Conflict Warning Engine validation check execution step
                     if chosen_date_str in scheduled_dates_set:
                         st.warning(f"⚠️ Schedule Conflict Alert: Another crew asset is already deployed on the date {chosen_date_str}. Review schedules before committing.")
                         
@@ -522,7 +507,7 @@ with tab3:
                     st.rerun()
 
 # ------------------------------------------
-# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS (UPSELL PROTECTED)
+# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS
 # ------------------------------------------
 with tab4:
     if tier_level < 2:
@@ -543,7 +528,6 @@ with tab4:
             field_ticket_map = {f"Ticket #{row['id']} for {row['name']}": row['id'] for row in field_active_tickets}
             selected_field_id = st.selectbox("Select Active Property Arrival Ticket Target", options=list(field_ticket_map.keys()))
             
-            # Locate active row match attributes
             active_ticket_row = [r for r in field_active_tickets if r["id"] == field_ticket_map[selected_field_id]][0]
             
             st.markdown("---")
@@ -560,9 +544,6 @@ with tab4:
                             conn.commit()
                         st.rerun()
             else:
-                # ==========================================
-                # ENFORCED SAFETY COMPLIANCE POINT CHECKS
-                # ==========================================
                 st.subheader("📋 Enforced Safety Compliance Point Checks")
                 st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
                 
@@ -581,7 +562,6 @@ with tab4:
                     st.markdown("##### 🔍 Project Scope Accessory Integrity Verification Checklist")
                     st.info(f"The structural contract scope required validation verification for: **{active_ticket_row['accessories_list']}**")
                     
-                    # Dynamically generate interactive itemized checklists based on the contract proposal items
                     parsed_accessories = [a.strip() for a in active_ticket_row['accessories_list'].split(",") if a.strip()]
                     if parsed_accessories:
                         for idx, accessory_item in enumerate(parsed_accessories):
@@ -608,7 +588,6 @@ with tab4:
                             st.success("Compliance diagnostics cataloged permanently!")
                             st.rerun()
 
-        # Print layout historical output preview engine module integration 
         st.markdown("---")
         st.subheader("📜 Professional Field Completion Receipt Records Archive")
         with get_connection() as conn:
@@ -627,7 +606,6 @@ with tab4:
             r_data = completed_history_df[completed_history_df["ticket_id"] == target_receipt_id].iloc[0]
             r_emoji = "🛡️" if "Shield" in r_data["logo_name"] else ("👑" if "Gold" in r_data["logo_name"] else "⚜️")
             
-            # Rendered structural printing canvas layout utilizing Installer Branded Logos
             with st.expander("📄 PREVIEW PROFESSIONAL COMPLIANCE LOG HANDOUT"):
                 compliance_html = f"""
                 <div class="report-box">
@@ -658,7 +636,7 @@ with tab4:
             st.info("No completed compliance entries currently stored inside memory logs.")
 
 # ------------------------------------------
-# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS (UPSELL PROTECTED)
+# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
 # ------------------------------------------
 with tab5:
     if tier_level < 3:
