@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import uuid
 import os
 import urllib.parse
+import streamlit.components.v1 as components
 
 # ==========================================
 # DEMO MODE BANNER + SESSION-ISOLATED DATABASE
@@ -111,7 +112,6 @@ if "tech_crews" not in st.session_state:
 # ==========================================
 st.set_page_config(page_title="GateOps Pro - Enterprise Workspace", page_icon="🚧", layout="wide")
 
-# UPGRADED: Added high-priority @media print directives to target browser print engines cleanly
 st.markdown(
     """
     <style>
@@ -131,29 +131,6 @@ st.markdown(
             color: #111111 !important;
             border-radius: 8px;
             font-family: Arial, sans-serif;
-        }
-        
-        /* High-priority print styles */
-        @media print {
-            body * {
-                visibility: hidden !important;
-            }
-            .printable-archive-receipt, .printable-archive-receipt * {
-                visibility: visible !important;
-            }
-            .printable-archive-receipt {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                border: none !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-            .no-print {
-                display: none !important;
-                visibility: hidden !important;
-            }
         }
     </style>
     """,
@@ -647,140 +624,3 @@ with tab4:
         if not completed_history_df.empty:
             st.dataframe(completed_history_df, use_container_width=True, hide_index=True)
             target_receipt_id = st.selectbox("Select Target Handout Report Profile ID", options=completed_history_df["ticket_id"].tolist())
-            
-            r_data = completed_history_df[completed_history_df["ticket_id"] == target_receipt_id].iloc[0]
-            r_emoji = "🛡️" if "Shield" in r_data["logo_name"] else ("👑" if "Gold" in r_data["logo_name"] else "⚜️")
-            
-            # FIX: Added printable-archive-receipt class wrapper around the markup box
-            document_markup = f"""
-            <div class="printable-archive-receipt report-box">
-                <div style='display:flex; justify-content:space-between; align-items:center;'>
-                    <h2>{r_emoji} {r_data['logo_name'].upper()} INSTALLATIONS</h2>
-                    <span style='background-color:#4CD964; color:white; padding:5px 10px; border-radius:4px; font-weight:bold; font-size:12px;'>SAFETY CERTIFIED</span>
-                </div>
-                <hr style='border:1px solid #333;'>
-                <p><b>Property Asset Coordinate:</b> {r_data['location']}</p>
-                <p><b>Client Notification Destination:</b> {r_data['client_email'] if r_data['client_email'] else 'Not Specified'}</p>
-                <p><b>Operator System Serial Tracking Identifier:</b> <code>{r_data['serial_number']}</code></p>
-                <p><b>Date of Certified On-Site Field Closeout:</b> {r_data['schedule_date']}</p>
-                <hr style='border: 0.5px solid #ddd;'>
-                <h4>UL 325 National Automation Safety Matrix Checklist Audit Result Elements:</h4>
-                <ul>
-                    <li>Photo-Eye Array Continuity Checkpoint: <b>{"PASS ✅" if r_data['photo_eyes_pass'] == 1 else "FAIL ❌"}</b></li>
-                    <li>Inductive Vehicle Safety Ground Loops Tracking Check: <b>{"PASS ✅" if r_data['loops_pass'] == 1 else "FAIL ❌"}</b></li>
-                    <li>Reversing Profile Contact Force Pressure Edge Trim: <b>{"PASS ✅" if r_data['edges_pass'] == 1 else "FAIL ❌"}</b></li>
-                    <li>Structural Structural Bearing Alignments & Mechanics: <b>{"PASS ✅" if r_data['hardware_pass'] == 1 else "FAIL ❌"}</b></li>
-                </ul>
-                <p><b>Integrated Project Scope Accessories Verified:</b> {r_data['accessories_list']}</p>
-                <p><b>Field Technician Service Log Comments:</b> <i>{r_data['technician_notes']}</i></p>
-                <hr style='border:1px solid #333;'>
-                <h3 style='text-align:right; color:#111; margin-top:5px;'>Statement Invoice Total Paid: ${r_data['total_with_fees']:.2f}</h3>
-            </div>
-            """
-            
-            with st.expander("📄 PREVIEW PROFESSIONAL COMPLIANCE LOG HANDOUT", expanded=True):
-                st.markdown(document_markup, unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    # FIX: Native window.print() now executes perfectly because CSS media targets isolate the receipt
-                    st.markdown("""
-                        <button class="no-print" onclick="window.print()" style="
-                            width: 100%;
-                            background-color: #4CAF50;
-                            color: white;
-                            padding: 12px 20px;
-                            border: none;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 16px;
-                            font-weight: bold;
-                            text-align: center;">
-                            🖨️ Execute Local Print / Save PDF
-                        </button>
-                    """, unsafe_allow_html=True)
-                with col_btn2:
-                    target_mail_address = r_data['client_email'] if r_data['client_email'] else ""
-                    email_subject = f"GateOps Safety Compliance Certification - Ticket #{target_receipt_id}"
-                    
-                    # FIX: Formatted the complete text body stream layout explicitly to pass inside mail client contexts
-                    pe_status = "PASS" if r_data['photo_eyes_pass'] == 1 else "FAIL"
-                    loop_status = "PASS" if r_data['loops_pass'] == 1 else "FAIL"
-                    edge_status = "PASS" if r_data['edges_pass'] == 1 else "FAIL"
-                    hw_status = "PASS" if r_data['hardware_pass'] == 1 else "FAIL"
-                    
-                    email_body = (
-                        f"GATEOPS AUTOMATION SAFETY CERTIFICATION REPORT\n"
-                        f"===============================================\n"
-                        f"Property Location: {r_data['location']}\n"
-                        f"System Operator Serial Number: {r_data['serial_number']}\n"
-                        f"Date Verified: {r_data['schedule_date']}\n\n"
-                        f"UL 325 SAFETY CHECKLIST MATRIX AUDIT ENTRIES:\n"
-                        f"- Photo-Eye Test: {pe_status}\n"
-                        f"- Vehicle Loops Test: {loop_status}\n"
-                        f"- Safety Pressure Edge Test: {edge_status}\n"
-                        f"- Mechanical Drive Integrity: {hw_status}\n\n"
-                        f"Scope Items Evaluated: {r_data['accessories_list']}\n"
-                        f"Technician Work Log Notes: {r_data['technician_notes']}\n\n"
-                        f"Invoice Total Settled: ${r_data['total_with_fees']:.2f}\n"
-                        f"===============================================\n"
-                        f"Thank you for business! Your system complies with commercial safety guidelines."
-                    )
-                    
-                    encoded_subject = urllib.parse.quote(email_subject)
-                    encoded_body = urllib.parse.quote(email_body)
-                    mailto_link = f"mailto:{target_mail_address}?subject={encoded_subject}&body={encoded_body}"
-                    
-                    st.markdown(f"""
-                        <a class="no-print" href="{mailto_link}" target="_blank" style="text-decoration: none;">
-                            <button style="
-                                width: 100%;
-                                background-color: #008CBA;
-                                color: white;
-                                padding: 12px 20px;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-size: 16px;
-                                font-weight: bold;
-                                text-align: center;">
-                                📧 Compose Client Handout E-Mail (Populate Body)
-                            </button>
-                        </a>
-                    """, unsafe_allow_html=True)
-                    
-                st.caption("💡 Hint: Clicking 'Execute Local Print' isolates the card box frame. Simply choose **'Save as PDF'** inside your operating system dialogue window to create digital file copies instantly.")
-        else:
-            st.info("No completed compliance entries currently stored inside memory logs.")
-
-# ------------------------------------------
-# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
-# ------------------------------------------
-with tab5:
-    if tier_level < 3:
-        st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
-    else:
-        st.header("Executive Board Performance Dash Analytics Dashboard")
-        with get_connection() as conn:
-            metrics = conn.execute("""
-                SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
-                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
-            """).fetchone()
-            
-        if not metrics or metrics["total_jobs"] == 0:
-            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
-        else:
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
-            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
-            surcharge_collected = gross_rev - base_rev
-            
-            with m_col1:
-                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
-            with m_col2:
-                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
-            with m_col3:
-                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
-            with m_col4:
-                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
