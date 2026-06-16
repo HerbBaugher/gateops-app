@@ -542,7 +542,6 @@ with tab4:
                 WHERE d.status IN ('En Route', 'Scheduled') AND d.technician_crew IS NOT NULL
             """).fetchall()
             
-        # SECTION A: FIELD SERVICE TICKET INPUT
         if not field_active_tickets:
             st.info("No active work dispatches are currently marked in open execution fields.")
         else:
@@ -609,8 +608,9 @@ with tab4:
                             st.success("Compliance diagnostics cataloged permanently!")
                             st.rerun()
 
-        # CRITICAL FIX: Separated the archive viewer entirely out of the active-ticket input loop 
-        # This keeps the print engine and email dispatch platform accessible at all times.
+        # ==========================================
+        # FIXED: STABLE ARCHIVE DISPLAY & DESKTOP DOWNLOAD ACTIONS
+        # ==========================================
         st.markdown("---")
         st.subheader("📜 Professional Field Completion Receipt Records Archive")
         
@@ -662,7 +662,9 @@ with tab4:
                 st.markdown(raw_html_receipt, unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                col_btn1, col_btn2 = st.columns(2)
+                # Split action row layouts into clean structural modules
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
+                
                 with col_btn1:
                     # Escape quotes cleanly to bypass JavaScript interpretation issues
                     safe_js_html = raw_html_receipt.replace('"', '\\"').replace("'", "\\'").replace('\n', ' ')
@@ -672,14 +674,14 @@ with tab4:
                         width: 100%;
                         background-color: #4CAF50;
                         color: white;
-                        padding: 14px 20px;
+                        padding: 12px 20px;
                         border: none;
                         border-radius: 4px;
                         cursor: pointer;
-                        font-size: 16px;
+                        font-size: 14px;
                         font-weight: bold;
                         text-align: center;">
-                        🖨️ Execute Local Print / Save PDF
+                        🖨️ Open Native Browser Print Window
                     </button>
 
                     <script>
@@ -696,9 +698,19 @@ with tab4:
                     }}
                     </script>
                     """
-                    components.html(print_button_component, height=65)
+                    components.html(print_button_component, height=55)
                     
                 with col_btn2:
+                    # NEW FIX: Explicit, un-sandboxed HTML file save block to bypass OS/Browser destination layout lockouts
+                    st.download_button(
+                        label="💾 Download Raw Handout Document (HTML/PDF Source)",
+                        data=raw_html_receipt,
+                        file_name=f"GateOps_Compliance_Report_Ticket_{target_receipt_id}.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+                    
+                with col_btn3:
                     target_mail_address = r_data['client_email'] if r_data['client_email'] else ""
                     email_subject = f"GateOps Safety Compliance Certification - Ticket #{target_receipt_id}"
                     
@@ -707,9 +719,9 @@ with tab4:
                     edge_status = "PASS" if r_data['edges_pass'] == 1 else "FAIL"
                     hw_status = "PASS" if r_data['hardware_pass'] == 1 else "FAIL"
                     
+                    # Clean plaintext backup string variant strictly for standard mailto: query arrays
                     email_body = (
-                        f"GATEOPS AUTOMATION SAFETY CERTIFICATION REPORT\n"
-                        f"===============================================\n"
+                        f"GATEOPS AUTOMATION SAFETY CERTIFICATION REPORT\n\n"
                         f"Property Location: {r_data['location']}\n"
                         f"System Operator Serial Number: {r_data['serial_number']}\n"
                         f"Date Verified: {r_data['schedule_date']}\n\n"
@@ -721,34 +733,38 @@ with tab4:
                         f"Scope Items Evaluated: {r_data['accessories_list']}\n"
                         f"Technician Work Log Notes: {r_data['technician_notes']}\n\n"
                         f"Invoice Total Settled: ${r_data['total_with_fees']:.2f}\n"
-                        f"===============================================\n"
-                        f"Thank you for your business! Your system complies with commercial safety guidelines."
                     )
                     
-                    encoded_subject = urllib.parse.quote(email_subject)
-                    encoded_body = urllib.parse.quote(email_body)
-                    mailto_link = f"mailto:{target_mail_address}?subject={encoded_subject}&body={encoded_body}"
+                    # FIXED: Strict URL Parameter encoding method wrapper applied to variables directly to ensure the browser handles spaces and newlines
+                    query_params = urllib.parse.urlencode({'subject': email_subject, 'body': email_body})
+                    mailto_link = f"mailto:{target_mail_address}?{query_params}"
                     
                     st.markdown(f"""
-                        <a href="{mailto_link}" target="_parent" style="text-decoration: none;">
+                        <a href="{mailto_link}" target="_blank" style="text-decoration: none;">
                             <button style="
                                 width: 100%;
                                 background-color: #008CBA;
                                 color: white;
-                                padding: 14px 20px;
+                                padding: 12px 20px;
                                 border: none;
                                 border-radius: 4px;
                                 cursor: pointer;
-                                font-size: 16px;
+                                font-size: 14px;
                                 font-weight: bold;
                                 text-align: center;
-                                height: 50px;">
-                                📧 Compose Client Handout E-Mail (Populate Body)
+                                height: 42px;">
+                                📧 Compose Client Handout E-Mail
                             </button>
                         </a>
                     """, unsafe_allow_html=True)
                     
-                st.caption("💡 **Operational Tip**: The print utility uses an un-sandboxed window hook. When the print layout opens, select **'Save as PDF'** from your device's printer destination dropdown list to store digital copies.")
+            st.markdown(
+                """
+                > 💡 **How to generate high-resolution PDF attachments locally:**
+                > 1. Click **'Open Native Browser Print Window'**. When your OS printer selection dialog appears, look for the **Destination** dropdown list and change it from your local office printer to **'Save as PDF'**.
+                > 2. Alternatively, click **'Download Raw Handout Document'** to instantly save a standalone file to your computer. Open that downloaded file in any browser, press `Ctrl + P` (or `Cmd + P` on Mac), and save it directly as a PDF.
+                """
+            )
 
 # ------------------------------------------
 # TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
@@ -758,25 +774,3 @@ with tab5:
         st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
     else:
         st.header("Executive Board Performance Dash Analytics Dashboard")
-        with get_connection() as conn:
-            metrics = conn.execute("""
-                SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
-                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
-            """).fetchone()
-            
-        if not metrics or metrics["total_jobs"] == 0:
-            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
-        else:
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
-            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
-            surcharge_collected = gross_rev - base_rev
-            
-            with m_col1:
-                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
-            with m_col2:
-                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
-            with m_col3:
-                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
-            with m_col4:
-                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
