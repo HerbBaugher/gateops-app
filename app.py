@@ -484,25 +484,47 @@ with tab3:
             st.subheader("Assign Crew & Calendar Fleet Assets")
             ticket_map = {f"Order #{row['id']} - Location: {row['name']}": row['id'] for row in unassigned_tickets}
             
+            # Form setup for dispatch parameters mapping
             with st.form("dispatch_scheduling_assignment"):
                 target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
-                crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", options=st.session_state.tech_crews)
+                
+                st.markdown("##### Assign Field Technician / Installation Crew Unit")
+                # RESTORED: Hybrid editable selection mechanism layout block
+                selected_dropdown_crew = st.selectbox(
+                    "Choose from registered tech profiles:", 
+                    options=["-- Use Custom Entry Typed Below --"] + st.session_state.tech_crews
+                )
+                custom_crew_text = st.text_input(
+                    "Or type / edit custom dispatcher name details right here:", 
+                    value="" if selected_dropdown_crew != "-- Use Custom Entry Typed Below --" else "",
+                    placeholder="e.g., Tech Miller & Apprentice J."
+                )
+                
                 target_date = st.date_input("Scheduled Field Deployment Targeting Date")
                 
                 if st.form_submit_button("Route Team and Deploy Ticket"):
-                    chosen_date_str = target_date.strftime("%Y-%m-%d")
-                    
-                    if chosen_date_str in scheduled_dates_set:
-                        st.warning(f"⚠️ Schedule Conflict Alert: Another crew asset is already deployed on the date {chosen_date_str}. Review schedules before committing.")
+                    # Determine final string payload value depending on text block interactions
+                    if selected_dropdown_crew == "-- Use Custom Entry Typed Below --":
+                        final_crew_identity = custom_crew_text.strip()
+                    else:
+                        final_crew_identity = selected_dropdown_crew
                         
-                    with get_connection() as conn:
-                        conn.execute(
-                            "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
-                            (crew_assignment, chosen_date_str, ticket_map[target_ticket])
-                        )
-                        conn.commit()
-                    st.success("Crew asset matched. Dispatch metrics synced layout targets successfully!")
-                    st.rerun()
+                    if not final_crew_identity:
+                        st.error("Please select a valid team identity or type a custom assignment into the field terminal framework.")
+                    else:
+                        chosen_date_str = target_date.strftime("%Y-%m-%d")
+                        
+                        if chosen_date_str in scheduled_dates_set:
+                            st.warning(f"⚠️ Schedule Conflict Alert: Another crew asset is already deployed on the date {chosen_date_str}. Review schedules before committing.")
+                            
+                        with get_connection() as conn:
+                            conn.execute(
+                                "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
+                                (final_crew_identity, chosen_date_str, ticket_map[target_ticket])
+                            )
+                            conn.commit()
+                        st.success(f"Successfully matched and deployed work parameters to: {final_crew_identity}!")
+                        st.rerun()
 
 # ------------------------------------------
 # TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS
@@ -586,9 +608,6 @@ with tab4:
                             st.success("Compliance diagnostics cataloged permanently!")
                             st.rerun()
 
-        # ==========================================
-        # UPGRADED: PRINT & E-MAIL READY ARCHIVE STREAM ELEMENT
-        # ==========================================
         st.markdown("---")
         st.subheader("📜 Professional Field Completion Receipt Records Archive")
         with get_connection() as conn:
@@ -607,7 +626,6 @@ with tab4:
             r_data = completed_history_df[completed_history_df["ticket_id"] == target_receipt_id].iloc[0]
             r_emoji = "🛡️" if "Shield" in r_data["logo_name"] else ("👑" if "Gold" in r_data["logo_name"] else "⚜️")
             
-            # Formatted HTML structure targeting automated frame print streams cleanly
             document_markup = f"""
             <div id="print-canvas" class="report-box">
                 <div style='display:flex; justify-content:space-between; align-items:center;'>
@@ -638,23 +656,8 @@ with tab4:
                 st.markdown(document_markup, unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Native dynamic JavaScript handler executing targeted frame prints instantly
-                print_action_js = """
-                <script>
-                function executeReceiptPrint() {
-                    var printContents = document.getElementById("print-canvas").innerHTML;
-                    var originalContents = document.body.innerHTML;
-                    document.body.innerHTML = printContents;
-                    window.print();
-                    document.body.innerHTML = originalContents;
-                    window.location.reload();
-                }
-                </script>
-                """
-                
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    # Injects immediate document streaming hooks directly into the browser viewport runtime layer
                     st.markdown("""
                         <button onclick="window.print()" style="
                             width: 100%;
@@ -671,7 +674,6 @@ with tab4:
                         </button>
                     """, unsafe_allow_html=True)
                 with col_btn2:
-                    # Generate dynamic mailto anchors targeting regional client email coordinates out of database definitions
                     target_mail_address = r_data['client_email'] if r_data['client_email'] else ""
                     email_subject = f"GateOps Safety Compliance Certification - Ticket #{target_receipt_id}"
                     email_body = f"Hello,\n\nPlease find attached the official system compliance safety validation summary receipt details targeting the property location at {r_data['location']}.\n\nSystem Tracking Serial ID: {r_data['serial_number']}\nTotal Certified Invoice Balance: ${r_data['total_with_fees']:.2f}\n\nBest Regards,\nField Service Desk Team"
@@ -699,37 +701,8 @@ with tab4:
                         </a>
                     """, unsafe_allow_html=True)
                     
-                st.caption("💡 Hint: Clicking 'Execute Local Print' triggers your browser's native printing panel. You can select your physically mapped office printer or choose **'Save as PDF'** to store a high-resolution, pixel-perfect copy onto your tablet or computer hard drive.")
+                st.caption("💡 Hint: Clicking 'Execute Local Print' triggers your browser's native printing panel. You can select your physically mapped office printer or choose **'Save as PDF'**.")
         else:
             st.info("No completed compliance entries currently stored inside memory logs.")
 
-# ------------------------------------------
-# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
-# ------------------------------------------
-with tab5:
-    if tier_level < 3:
-        st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
-    else:
-        st.header("Executive Board Performance Dash Analytics Dashboard")
-        with get_connection() as conn:
-            metrics = conn.execute("""
-                SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
-                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
-            """).fetchone()
-            
-        if not metrics or metrics["total_jobs"] == 0:
-            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
-        else:
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
-            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
-            surcharge_collected = gross_rev - base_rev
-            
-            with m_col1:
-                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
-            with m_col2:
-                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
-            with m_col3:
-                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
-            with m_col4:
-                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
+# ----------------
