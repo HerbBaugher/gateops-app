@@ -631,7 +631,7 @@ with tab4:
             r_data = completed_history_df[completed_history_df["ticket_id"] == target_receipt_id].iloc[0]
             r_emoji = "🛡️" if "Shield" in r_data["logo_name"] else ("👑" if "Gold" in r_data["logo_name"] else "⚜️")
             
-            # Isolated HTML markup block used dynamically by both components
+            # Isolated HTML markup block used dynamically by components
             raw_html_receipt = f"""
             <div style="border: 2px solid #333; padding: 25px; background-color: #ffffff; color: #111111; border-radius: 8px; font-family: Arial, sans-serif;">
                 <div style='display:flex; justify-content:space-between; align-items:center;'>
@@ -701,7 +701,6 @@ with tab4:
                     components.html(print_button_component, height=55)
                     
                 with col_btn2:
-                    # NEW FIX: Explicit, un-sandboxed HTML file save block to bypass OS/Browser destination layout lockouts
                     st.download_button(
                         label="💾 Download Raw Handout Document (HTML/PDF Source)",
                         data=raw_html_receipt,
@@ -719,7 +718,6 @@ with tab4:
                     edge_status = "PASS" if r_data['edges_pass'] == 1 else "FAIL"
                     hw_status = "PASS" if r_data['hardware_pass'] == 1 else "FAIL"
                     
-                    # Clean plaintext backup string variant strictly for standard mailto: query arrays
                     email_body = (
                         f"GATEOPS AUTOMATION SAFETY CERTIFICATION REPORT\n\n"
                         f"Property Location: {r_data['location']}\n"
@@ -735,9 +733,10 @@ with tab4:
                         f"Invoice Total Settled: ${r_data['total_with_fees']:.2f}\n"
                     )
                     
-                    # FIXED: Strict URL Parameter encoding method wrapper applied to variables directly to ensure the browser handles spaces and newlines
-                    query_params = urllib.parse.urlencode({'subject': email_subject, 'body': email_body})
-                    mailto_link = f"mailto:{target_mail_address}?{query_params}"
+                    # ENCODING FIX: Changed from urlencode() to quote() to use raw browser %20 spaces instead of form fields + symbols
+                    encoded_subject = urllib.parse.quote(email_subject)
+                    encoded_body = urllib.parse.quote(email_body)
+                    mailto_link = f"mailto:{target_mail_address}?subject={encoded_subject}&body={encoded_body}"
                     
                     st.markdown(f"""
                         <a href="{mailto_link}" target="_blank" style="text-decoration: none;">
@@ -774,3 +773,7 @@ with tab5:
         st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
     else:
         st.header("Executive Board Performance Dash Analytics Dashboard")
+        with get_connection() as conn:
+            metrics = conn.execute("""
+                SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
+                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status
