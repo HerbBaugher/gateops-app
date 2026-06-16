@@ -347,4 +347,389 @@ with tab2:
             prop_df = pd.read_sql_query(proposals_query, conn)
             
         if not prop_df.empty:
-            st.dataframe(prop_df, use_container_width
+            st.dataframe(prop_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("### 🖋️ Live Review, Edit & Output Processing Module")
+            selected_prop_id = st.selectbox("Select Active Document Target Reference ID", options=prop_df["id"].tolist())
+            
+            target_row = prop_df[prop_df["id"] == selected_prop_id].iloc[0]
+            
+            st.markdown("#### 🔄 Real-Time Negotiation Override Form")
+            col_ed1, col_ed2 = st.columns(2)
+            with col_ed1:
+                edit_scope = st.text_area("Modify Working Scope Paragraph", value=target_row["scope_of_work"])
+            with col_ed2:
+                edit_price = st.number_input("Override Pricing Threshold Matrix Base ($)", value=float(target_row["base_pricing"]))
+                
+            if st.button("Save Contract Amendments"):
+                with get_connection() as conn:
+                    new_gross = edit_price * (1 + (new_fee / 100))
+                    conn.execute("UPDATE proposals SET scope_of_work = ?, base_pricing = ?, total_with_fees = ? WHERE id = ?", (edit_scope, edit_price, new_gross, selected_prop_id))
+                    conn.commit()
+                st.success("Amendments updated inside active data pools!")
+                st.rerun()
+
+            st.markdown("---")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                decision_state = st.radio("Client Execution Decision Target State", ["Accepted - Pass to Dispatch Routing", "Declined - Clear Record Reference"])
+                printed_sig_name = st.text_input("Authorized Approver Printed Full Signature Name")
+                signature_confirm = st.checkbox("Signee digital authentication check validation pattern.")
+            with col_d2:
+                st.markdown("#### 🖨️ Document Output Simulator Console")
+                
+                logo_emoji = "🛡️" if "Shield" in target_row["logo_name"] else ("👑" if "Gold" in target_row["logo_name"] else "⚜️")
+                
+                html_preview = f"""
+                <div class="report-box">
+                    <div style='display:flex; justify-content:space-between; align-items:center;'>
+                        <h2>{logo_emoji} {target_row['logo_name'].upper()}</h2>
+                        <h4 style='color:#666;'>PREVENTIVE MAINTENANCE PROPOSAL</h4>
+                    </div>
+                    <hr>
+                    <p><b>Prepared For:</b> {target_row['customer_name']}</p>
+                    <p><b>Itemized System Units:</b> {target_row['itemized_layouts']}</p>
+                    <p><b>Included Safe Accessories Trailing Array:</b> {target_row['accessories_list']}</p>
+                    <p><b>Binding Structural Scope of Work Elements:</b> <br><i>{target_row['scope_of_work']}</i></p>
+                    <hr>
+                    <h3>Total Investment Summary Net Value: ${target_row['base_pricing']:.2f}</h3>
+                    <h4>Gross Total (with Credit Card Transaction Processing Surcharge): ${target_row['total_with_fees']:.2f}</h4>
+                </div>
+                """
+                st.markdown(html_preview, unsafe_allow_html=True)
+                
+                st.download_button(
+                    label="📧 Dispatch Document Stream via Local E-Mail/Print System Wrapper",
+                    data=f"Proposal ID: {selected_prop_id}\nLogo: {target_row['logo_name']}\nClient: {target_row['customer_name']}\nScope: {target_row['scope_of_work']}\nTotal Due: ${target_row['total_with_fees']:.2f}",
+                    file_name=f"GateOps_Professional_Proposal_{selected_prop_id}.txt",
+                    mime="text/plain"
+                )
+                
+            if st.button("Commit Document Phase State Update"):
+                if decision_state == "Accepted - Pass to Dispatch Routing":
+                    if not printed_sig_name or not signature_confirm:
+                        st.error("Authentication confirmation logs missing.")
+                    else:
+                        with get_connection() as conn:
+                            conn.execute("UPDATE proposals SET status = 'Accepted' WHERE id = ?", (selected_prop_id,))
+                            conn.execute(
+                                "INSERT INTO dispatches (proposal_id, customer_id, client_signature, status) VALUES (?, ?, ?, 'Scheduled')",
+                                (selected_prop_id, int(target_row["customer_id"]), printed_sig_name)
+                            )
+                            conn.commit()
+                        st.success("Closing execution approved! Task parameters passed onward to tracking calendars.")
+                        st.rerun()
+                else:
+                    with get_connection() as conn:
+                        conn.execute("UPDATE proposals SET status = 'Declined' WHERE id = ?", (selected_prop_id,))
+                        conn.commit()
+                    st.rerun()
+
+# ------------------------------------------
+# TAB 3: DISPATCH & SCHEDULING
+# ------------------------------------------
+with tab3:
+    if tier_level < 2:
+        st.markdown("## 🔒 Unlock Crew Dispatch & Route Management")
+        st.link_button("🚀 Step up to Ops Commander for +$100/mo", "https://yourbillingportal.com/upgrade")
+    else:
+        st.header("Fleet Coordination Dispatch Board")
+        
+        with get_connection() as conn:
+            calendar_query_df = pd.read_sql_query("SELECT schedule_date, technician_crew FROM dispatches WHERE status != 'Completed' AND schedule_date IS NOT NULL", conn)
+        
+        st.subheader("📅 Active Field Commitments Calendar Queue")
+        st.caption("Real-Time Structural Month-to-Month Schedule Map Grid (Conflict Mitigation Engine)")
+        
+        scheduled_dates_set = set(calendar_query_df["schedule_date"].tolist())
+        
+        base_date = datetime.now()
+        months_to_display = [0, 1, 2]
+        
+        c_cols = st.columns(3)
+        for idx, m_offset in enumerate(months_to_display):
+            with c_cols[idx]:
+                target_month_date = base_date + timedelta(days=30 * m_offset)
+                m_num = target_month_date.month
+                y_num = target_month_date.year
+                
+                st.markdown(f"##### 📆 {target_month_date.strftime('%B %Y')}")
+                
+                day_buttons_html = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size:11px;'>"
+                days_labels = ["S","M","T","W","T","F","S"]
+                for dl in days_labels:
+                    day_buttons_html += f"<div style='font-weight:bold; color:#777;'>{dl}</div>"
+                    
+                for d_idx in range(1, 32):
+                    test_str = f"{y_num}-{m_num:02d}-{d_idx:02d}"
+                    if test_str in scheduled_dates_set:
+                        day_buttons_html += f"<div style='background-color:#FF4B4B; color:white; font-weight:bold; border-radius:4px; padding:2px;' title='Conflict Lock: Job Appointed'>{d_idx}</div>"
+                    else:
+                        day_buttons_html += f"<div style='background-color:#e0e0e0; color:#333; border-radius:4px; padding:2px;'>{d_idx}</div>"
+                day_buttons_html += "</div>"
+                st.markdown(day_buttons_html, unsafe_allow_html=True)
+                
+        st.markdown("---")
+        
+        with get_connection() as conn:
+            unassigned_tickets = conn.execute("""
+                SELECT d.id, c.name FROM dispatches d 
+                JOIN customers c ON d.customer_id = c.id 
+                WHERE d.status = 'Scheduled' AND d.technician_crew IS NULL
+            """).fetchall()
+            
+        if not unassigned_tickets:
+            st.info("No unassigned work orders awaiting active routing updates.")
+        else:
+            st.subheader("Assign Crew & Calendar Fleet Assets")
+            ticket_map = {f"Order #{row['id']} - Location: {row['name']}": row['id'] for row in unassigned_tickets}
+            
+            with st.form("dispatch_scheduling_assignment"):
+                target_ticket = st.selectbox("Select Outstanding Service Work Order Target", options=list(ticket_map.keys()))
+                crew_assignment = st.selectbox("Assign Field Technician/Installation Crew Unit", options=st.session_state.tech_crews)
+                target_date = st.date_input("Scheduled Field Deployment Targeting Date")
+                
+                if st.form_submit_button("Route Team and Deploy Ticket"):
+                    chosen_date_str = target_date.strftime("%Y-%m-%d")
+                    
+                    if chosen_date_str in scheduled_dates_set:
+                        st.warning(f"⚠️ Schedule Conflict Alert: Another crew asset is already deployed on the date {chosen_date_str}. Review schedules before committing.")
+                        
+                    with get_connection() as conn:
+                        conn.execute(
+                            "UPDATE dispatches SET technician_crew = ?, schedule_date = ?, status = 'En Route' WHERE id = ?",
+                            (crew_assignment, chosen_date_str, ticket_map[target_ticket])
+                        )
+                        conn.commit()
+                    st.success("Crew asset matched. Dispatch metrics synced layout targets successfully!")
+                    st.rerun()
+
+# ------------------------------------------
+# TAB 4: COMPLIANCE CHECKS & DIGITAL WORK ORDERS
+# ------------------------------------------
+with tab4:
+    if tier_level < 2:
+        st.markdown("## 🔒 Unlock Mobile Field Terminal Handouts")
+    else:
+        st.header("Mobile Field Service Terminal")
+        with get_connection() as conn:
+            field_active_tickets = conn.execute("""
+                SELECT d.id, c.name, p.accessories_list, p.logo_name FROM dispatches d 
+                JOIN customers c ON d.customer_id = c.id 
+                JOIN proposals p ON d.proposal_id = p.id
+                WHERE d.status IN ('En Route', 'Scheduled') AND d.technician_crew IS NOT NULL
+            """).fetchall()
+            
+        if not field_active_tickets:
+            st.info("No active work dispatches are currently marked in open execution fields.")
+        else:
+            field_ticket_map = {f"Ticket #{row['id']} for {row['name']}": row['id'] for row in field_active_tickets}
+            selected_field_id = st.selectbox("Select Active Property Arrival Ticket Target", options=list(field_ticket_map.keys()))
+            
+            active_ticket_row = [r for r in field_active_tickets if r["id"] == field_ticket_map[selected_field_id]][0]
+            
+            st.markdown("---")
+            if tier_level < 3:
+                st.markdown("### 🔒 Protect Your Business with UL 325 Safety Verification Matrices")
+                st.link_button("🚀 Unlock Enterprise Compliance for +$200/mo", "https://yourbillingportal.com/upgrade")
+                
+                with st.form("basic_work_order_closure"):
+                    t_id = field_ticket_map[selected_field_id]
+                    basic_notes = st.text_area("On-Site Work Summary Progress Notes")
+                    if st.form_submit_button("Close Job Ticket (Basic)"):
+                        with get_connection() as conn:
+                            conn.execute("UPDATE dispatches SET status = 'Completed', technician_notes = ? WHERE id = ?", (basic_notes, t_id))
+                            conn.commit()
+                        st.rerun()
+            else:
+                st.subheader("📋 Enforced Safety Compliance Point Checks")
+                st.caption("Standardized UL 325 & ASTM F2200 Hardware Testing Console")
+                
+                with st.form("safety_audit_submission_form"):
+                    t_id = field_ticket_map[selected_field_id]
+                    serial_no = st.text_input("Gate Operator System Serial Number (For Historical Records)")
+                    
+                    col_chk1, col_chk2 = st.columns(2)
+                    with col_chk1:
+                        pe_check = st.checkbox("Photo-Eye Interruption Test: Beam break stops & completely reverses gate travel.")
+                        loop_check = st.checkbox("Inductive Loop Matrix Check: Ground coils maintain loop presence hold calls safely.")
+                    with col_chk2:
+                        edge_check = st.checkbox("Safety Obstruction Edge Test: Contact impact strips activate safety reverse limits instantly.")
+                        hw_check = st.checkbox("Mechanical Hardware Integrity: Drive tracking alignment, sprockets, and chains certified.")
+                        
+                    st.markdown("##### 🔍 Project Scope Accessory Integrity Verification Checklist")
+                    st.info(f"The structural contract scope required validation verification for: **{active_ticket_row['accessories_list']}**")
+                    
+                    parsed_accessories = [a.strip() for a in active_ticket_row['accessories_list'].split(",") if a.strip()]
+                    if parsed_accessories:
+                        for idx, accessory_item in enumerate(parsed_accessories):
+                            st.checkbox(f"Verify Accessory Deployment Diagnostics Status Item: [{accessory_item}] functional pass parameters verified.", key=f"scope_item_{idx}")
+                    else:
+                        st.caption("*No secondary auxiliary elements were mapped into this contract scope layout profile.*")
+                        
+                    tech_comments = st.text_area("On-Site Service Engineering Progress Logs & Repair Text Entries")
+                    tech_sig = st.text_input("Lead Certified Installer/Technician Name Signature Block")
+                    cust_sig_verify = st.text_input("Property Representative/Site Authority Acceptance Name")
+                        
+                    if st.form_submit_button("Lock Diagnostics & Issue Professional Verification Certificate Report"):
+                        if not serial_no or not tech_sig or not cust_sig_verify:
+                            st.error("Hardware Serial Number mapping parameters and execution signatures are required to compile professional receipts.")
+                        else:
+                            with get_connection() as conn:
+                                conn.execute("""
+                                    UPDATE dispatches 
+                                    SET status = 'Completed', photo_eyes_pass = ?, loops_pass = ?, 
+                                        edges_pass = ?, hardware_pass = ?, technician_notes = ? , serial_number = ?
+                                    WHERE id = ?
+                                """, (1 if pe_check else 0, 1 if loop_check else 0, 1 if edge_check else 0, 1 if hw_check else 0, tech_comments, serial_no, t_id))
+                                conn.commit()
+                            st.success("Compliance diagnostics cataloged permanently!")
+                            st.rerun()
+
+        # ==========================================
+        # UPGRADED: PRINT & E-MAIL READY ARCHIVE STREAM ELEMENT
+        # ==========================================
+        st.markdown("---")
+        st.subheader("📜 Professional Field Completion Receipt Records Archive")
+        with get_connection() as conn:
+            completed_history_df = pd.read_sql_query("""
+                SELECT d.id as ticket_id, c.name as location, c.email as client_email, d.serial_number, d.schedule_date, 
+                       d.photo_eyes_pass, d.loops_pass, d.edges_pass, d.hardware_pass, 
+                       d.technician_notes, p.total_with_fees, p.logo_name, p.accessories_list
+                FROM dispatches d JOIN customers c ON d.customer_id = c.id 
+                JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
+            """, conn)
+            
+        if not completed_history_df.empty:
+            st.dataframe(completed_history_df, use_container_width=True, hide_index=True)
+            target_receipt_id = st.selectbox("Select Target Handout Report Profile ID", options=completed_history_df["ticket_id"].tolist())
+            
+            r_data = completed_history_df[completed_history_df["ticket_id"] == target_receipt_id].iloc[0]
+            r_emoji = "🛡️" if "Shield" in r_data["logo_name"] else ("👑" if "Gold" in r_data["logo_name"] else "⚜️")
+            
+            # Formatted HTML structure targeting automated frame print streams cleanly
+            document_markup = f"""
+            <div id="print-canvas" class="report-box">
+                <div style='display:flex; justify-content:space-between; align-items:center;'>
+                    <h2>{r_emoji} {r_data['logo_name'].upper()} INSTALLATIONS</h2>
+                    <span style='background-color:#4CD964; color:white; padding:5px 10px; border-radius:4px; font-weight:bold; font-size:12px;'>SAFETY CERTIFIED</span>
+                </div>
+                <hr style='border:1px solid #333;'>
+                <p><b>Property Asset Coordinate:</b> {r_data['location']}</p>
+                <p><b>Client Notification Destination:</b> {r_data['client_email'] if r_data['client_email'] else 'Not Specified'}</p>
+                <p><b>Operator System Serial Tracking Identifier:</b> <code>{r_data['serial_number']}</code></p>
+                <p><b>Date of Certified On-Site Field Closeout:</b> {r_data['schedule_date']}</p>
+                <hr style='border: 0.5px solid #ddd;'>
+                <h4>UL 325 National Automation Safety Matrix Checklist Audit Result Elements:</h4>
+                <ul>
+                    <li>Photo-Eye Array Continuity Checkpoint: <b>{"PASS ✅" if r_data['photo_eyes_pass'] == 1 else "FAIL ❌"}</b></li>
+                    <li>Inductive Vehicle Safety Ground Loops Tracking Check: <b>{"PASS ✅" if r_data['loops_pass'] == 1 else "FAIL ❌"}</b></li>
+                    <li>Reversing Profile Contact Force Pressure Edge Trim: <b>{"PASS ✅" if r_data['edges_pass'] == 1 else "FAIL ❌"}</b></li>
+                    <li>Structural Structural Bearing Alignments & Mechanics: <b>{"PASS ✅" if r_data['hardware_pass'] == 1 else "FAIL ❌"}</b></li>
+                </ul>
+                <p><b>Integrated Project Scope Accessories Verified:</b> {r_data['accessories_list']}</p>
+                <p><b>Field Technician Service Log Comments:</b> <i>{r_data['technician_notes']}</i></p>
+                <hr style='border:1px solid #333;'>
+                <h3 style='text-align:right; color:#111; margin-top:5px;'>Statement Invoice Total Paid: ${r_data['total_with_fees']:.2f}</h3>
+            </div>
+            """
+            
+            with st.expander("📄 PREVIEW PROFESSIONAL COMPLIANCE LOG HANDOUT", expanded=True):
+                st.markdown(document_markup, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Native dynamic JavaScript handler executing targeted frame prints instantly
+                print_action_js = """
+                <script>
+                function executeReceiptPrint() {
+                    var printContents = document.getElementById("print-canvas").innerHTML;
+                    var originalContents = document.body.innerHTML;
+                    document.body.innerHTML = printContents;
+                    window.print();
+                    document.body.innerHTML = originalContents;
+                    window.location.reload();
+                }
+                </script>
+                """
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    # Injects immediate document streaming hooks directly into the browser viewport runtime layer
+                    st.markdown("""
+                        <button onclick="window.print()" style="
+                            width: 100%;
+                            background-color: #4CAF50;
+                            color: white;
+                            padding: 12px 20px;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 16px;
+                            font-weight: bold;
+                            text-align: center;">
+                            🖨️ Execute Local Print / Save PDF
+                        </button>
+                    """, unsafe_allow_html=True)
+                with col_btn2:
+                    # Generate dynamic mailto anchors targeting regional client email coordinates out of database definitions
+                    target_mail_address = r_data['client_email'] if r_data['client_email'] else ""
+                    email_subject = f"GateOps Safety Compliance Certification - Ticket #{target_receipt_id}"
+                    email_body = f"Hello,\n\nPlease find attached the official system compliance safety validation summary receipt details targeting the property location at {r_data['location']}.\n\nSystem Tracking Serial ID: {r_data['serial_number']}\nTotal Certified Invoice Balance: ${r_data['total_with_fees']:.2f}\n\nBest Regards,\nField Service Desk Team"
+                    
+                    import urllib.parse
+                    encoded_subject = urllib.parse.quote(email_subject)
+                    encoded_body = urllib.parse.quote(email_body)
+                    mailto_link = f"mailto:{target_mail_address}?subject={encoded_subject}&body={encoded_body}"
+                    
+                    st.markdown(f"""
+                        <a href="{mailto_link}" target="_blank" style="text-decoration: none;">
+                            <button style="
+                                width: 100%;
+                                background-color: #008CBA;
+                                color: white;
+                                padding: 12px 20px;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-size: 16px;
+                                font-weight: bold;
+                                text-align: center;">
+                                📧 Compose Client Handout E-Mail
+                            </button>
+                        </a>
+                    """, unsafe_allow_html=True)
+                    
+                st.caption("💡 Hint: Clicking 'Execute Local Print' triggers your browser's native printing panel. You can select your physically mapped office printer or choose **'Save as PDF'** to store a high-resolution, pixel-perfect copy onto your tablet or computer hard drive.")
+        else:
+            st.info("No completed compliance entries currently stored inside memory logs.")
+
+# ------------------------------------------
+# TAB 5: EXECUTIVE PERFORMANCE ANALYTICS
+# ------------------------------------------
+with tab5:
+    if tier_level < 3:
+        st.markdown("## 🔒 Unlock Executive Analytics & Revenue Ledgers")
+    else:
+        st.header("Executive Board Performance Dash Analytics Dashboard")
+        with get_connection() as conn:
+            metrics = conn.execute("""
+                SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
+                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
+            """).fetchone()
+            
+        if not metrics or metrics["total_jobs"] == 0:
+            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
+        else:
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
+            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
+            surcharge_collected = gross_rev - base_rev
+            
+            with m_col1:
+                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
+            with m_col2:
+                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
+            with m_col3:
+                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
+            with m_col4:
+                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
