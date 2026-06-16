@@ -776,4 +776,22 @@ with tab5:
         with get_connection() as conn:
             metrics = conn.execute("""
                 SELECT COUNT(DISTINCT d.id) as total_jobs, SUM(p.total_with_fees) as gross_revenue, SUM(p.base_pricing) as base_revenue
-                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status
+                FROM dispatches d JOIN proposals p ON d.proposal_id = p.id WHERE d.status = 'Completed'
+            """).fetchone()
+            
+        if not metrics or metrics["total_jobs"] == 0:
+            st.info("Dashboard requires completed workflow execution profiles to map operational revenue data charts.")
+        else:
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            gross_rev = metrics["gross_revenue"] if metrics["gross_revenue"] else 0.0
+            base_rev = metrics["base_revenue"] if metrics["base_revenue"] else 0.0
+            surcharge_collected = gross_rev - base_rev
+            
+            with m_col1:
+                st.metric("Total Operational Compliance Jobs Filed", f"{metrics['total_jobs']} Closed Tasks")
+            with m_col2:
+                st.metric("Gross Platform Managed Invoiced Revenue", f"${gross_rev:,.2f}", delta=f"Fees Added: {new_fee}%")
+            with m_col3:
+                st.metric("Surcharges Passed to Clients (Saved Cash)", f"${surcharge_collected:,.2f}", delta="100% Retained", delta_color="inverse")
+            with m_col4:
+                st.metric("Clean Net Cash Margin Baseline Ledger", f"${base_rev:,.2f}")
